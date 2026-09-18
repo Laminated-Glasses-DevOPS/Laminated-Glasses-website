@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Laminated Glasses — rasmli oynalar</title>
+<meta name="description" content="Rasmingizni sifatli laminatsiya bilan oynaga bosib beramiz. Katalogdan tanlang, savatga soling va buyurtmani rasmiylashtiring." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪟</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- Ism so'raydigan oyna. Sayt ochilganda EMAS, foydalanuvchi birinchi marta
+     "Savatga" tugmasini bosganda ochiladi va faqat bir marotaba ko'rinadi. -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEAF5"/>
+      <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#gg)"/>
+      <defs><linearGradient id="gg" x1="12" y1="6" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#8CC4E8"/><stop offset="1" stop-color="#12557F"/>
+      </linearGradient></defs>
+    </svg>
+    <h1>Yana bitta qadam qoldi</h1>
+    <p>Mahsulot savatga qo'shilishidan oldin ismingizni so'raymiz — buyurtmangiz shu ism bilan qayd qilinadi va sotuvchi sizni aynan shu ism orqali topadi. Ism faqat shu bir marta so'raladi va keyin o'zgartirilmaydi.</p>
+    <form id="gateForm" novalidate>
+      <input type="text" id="gateName" class="gate-input" placeholder="Masalan: Aziz Karimov" maxlength="120" autocomplete="name" />
+      <div class="gate-error" id="gateError"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="gateBtn">Davom etish</button>
+    </form>
+    <p class="gate-note">Telefon raqami yoki parol so'ralmaydi. Ismingiz brauzeringizga bog'lanadi: shu qurilmadan qayta kirsangiz, sayt sizni o'zi taniydi va ism qayta so'ralmaydi.</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap">
+    <a href="#" class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEAF5"/>
+        <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#g1)"/>
+        <defs><linearGradient id="g1" x1="12" y1="6" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#8CC4E8"/><stop offset="1" stop-color="#12557F"/>
+        </linearGradient></defs>
+      </svg>
+      <span>Laminated Glasses<small>rasmli oynalar ustaxonasi</small></span>
+    </a>
+
+    <nav class="main-nav">
+      <a href="#bosh-sahifa">Bosh sahifa</a>
+      <a href="#mahsulotlar">Mahsulotlar</a>
+      <a href="#xizmatlar">Xizmatlar</a>
+      <a href="#portfolio">Portfolio</a>
+      <a href="#biz-haqimizda">Biz haqimizda</a>
+      <a href="#yangiliklar">Yangiliklar</a>
+      <a href="#aloqa">Aloqa</a>
+    </nav>
+
+    <div class="header-side">
+      <button class="user-chip static" id="userChip" title="Ismingiz" tabindex="-1">
+        <span class="avatar" id="userInitial">?</span>
+        <span class="name" id="userName">Mehmon</span>
+      </button>
+      <button class="cart-btn" id="cartBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/>
+          <circle cx="10" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/>
+        </svg>
+        <span class="label">Savat</span>
+        <span class="cart-count" id="cartCount" hidden>0</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<section class="hero" id="bosh-sahifa">
+  <div class="wrap">
+    <div>
+      <h1>Rasmingiz endi oyna ichida yashaydi</h1>
+      <p>Suratingizni laminatsiya texnologiyasi bilan oynaga bosamiz. Uy, ofis yoki sovg'a uchun — namlikdan qo'rqmaydigan, rangi o'chmaydigan natija.</p>
+      <div class="hero-actions">
+        <a href="#mahsulotlar" class="btn btn-primary">Mahsulotlarni ko'rish</a>
+        <a href="#qanday-ishlaydi" class="btn btn-ghost">Qanday buyurtma beriladi</a>
+      </div>
+      <div class="hero-stats">
+        <div><strong id="statProducts">—</strong><span>mahsulot turi</span></div>
+        <div><strong id="statCategories">—</strong><span>kategoriya</span></div>
+        <div><strong id="statCartDays">7</strong><span>kun savatda saqlanadi</span></div>
+      </div>
+    </div>
+    <div class="glass-visual" aria-hidden="true">
+      <div class="pane pane-back"></div>
+      <div class="pane pane-front"></div>
+      <div class="glass-badge">Chizilmaydi, xira tortmaydi</div>
+    </div>
+  </div>
+</section>
+
+<section class="catalog" id="mahsulotlar">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Mahsulotlar</h2>
+        <p>Kategoriya bo'yicha tanlang yoki nom bo'yicha qidiring.</p>
+      </div>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="searchInput" placeholder="Mahsulot nomini qidirish" />
+      </div>
+    </div>
+
+    <div class="filters" id="filters"></div>
+
+    <div class="product-grid" id="productGrid">
+      <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+    </div>
+  </div>
+</section>
+
+<section class="services" id="xizmatlar">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Xizmatlar</h2>
+        <p>Rasmni oynaga bosishdan tashqari, buyurtmangizni to'liq qamrab oladigan xizmatlar.</p>
+      </div>
+    </div>
+    <div class="service-grid">
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 15 5-5 4 4 4-4 5 5"/><circle cx="8.5" cy="8.5" r="1.4"/></svg>
+        </div>
+        <h3>Rasmni oynaga bosish</h3>
+        <p>Istalgan suratni yuqori aniqlikdagi laminatsiya texnologiyasi bilan oynaga bosamiz — rangi o'chmaydi, namlikdan qo'rqmaydi.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 21V7l8-4 8 4v14"/><path d="M4 11h16"/><path d="M12 21v-6"/></svg>
+        </div>
+        <h3>Maxsus o'lcham bo'yicha</h3>
+        <p>Katalogdagi standart o'lchamlar mos kelmasa, sizning texnikangiz yoki devoringiz o'lchamiga moslab tayyorlaymiz.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 3v18M16 3v18"/></svg>
+        </div>
+        <h3>Ramka va o'rnatish jihozlari</h3>
+        <p>Tayyor oynani devorga yoki texnikaga qulay o'rnatish uchun kerakli jihozlar bilan birga yetkazamiz.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        </div>
+        <h3>Tez tayyorlash muddati</h3>
+        <p>Buyurtma rasmiylashtirilgach, tayyor mahsulot qisqa muddatda tayyorlanadi — muddat Telegramda aniq kelishiladi.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="portfolio" id="portfolio">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Portfolio loihalari</h2>
+        <p>Avval tayyorlangan ishlardan namunalar — mijozlarimiz uchun bosilgan haqiqiy oynalar.</p>
+      </div>
+    </div>
+    <div class="portfolio-grid" id="portfolioGrid">
+      <div class="portfolio-card">
+        <img src="/uploads/b29523fc127b405a944625bada8e5741.jpg" alt="Loyiha: Magic City" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Magic City dizayni</div>
+      </div>
+      <div class="portfolio-card">
+        <img src="/uploads/18f786b844214749bffd4e4f482b7e7d.jpg" alt="Loyiha: Toshkent City" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Toshkent City dizayni</div>
+      </div>
+      <div class="portfolio-card">
+        <img src="/uploads/5639464f2bea4d3fa9a1bfc873d26e0e.jpg" alt="Loyiha: Qora Fuji" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Qora Fuji dizayni</div>
+      </div>
+      <div class="portfolio-card">
+        <img src="/uploads/562878eee6204a59a290265981d5bc86.jpg" alt="Loyiha: Chinnigul" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Chinnigul dizayni</div>
+      </div>
+      <div class="portfolio-card">
+        <img src="/uploads/8a0700e0c4174f79ada43bfa12724c32.jpg" alt="Loyiha: Nilufar" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Nilufar dizayni</div>
+      </div>
+      <div class="portfolio-card">
+        <img src="/uploads/87867a481643433d8866078d4381cc0a.jpg" alt="Loyiha: Toshkent City" loading="lazy" />
+        <div class="portfolio-cap">Loyiha — Toshkent City dizayni</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="steps" id="qanday-ishlaydi">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Buyurtma qanday beriladi</h2>
+        <p>To'rt qadam, hammasi bir necha daqiqada.</p>
+      </div>
+    </div>
+    <div class="step-grid">
+      <div class="step">
+        <b>1</b>
+        <h3>Mahsulotni ko'ring</h3>
+        <p>Saytga kirishingiz bilan hech narsa so'ralmaydi — darhol katalogni ko'rib, yoqqan mahsulotni tanlaysiz.</p>
+      </div>
+      <div class="step">
+        <b>2</b>
+        <h3>Savatga soling</h3>
+        <p>"Savatga" tugmasini birinchi bosganingizda ismingiz so'raladi — bu faqat bir marta bo'ladi va keyin qayta so'ralmaydi. Savat 7 kun davomida saqlanadi.</p>
+      </div>
+      <div class="step">
+        <b>3</b>
+        <h3>Rasmiylashtiring</h3>
+        <p>Savatdagi "Rasmiylashtirish" tugmasi buyurtma raqamini beradi va sizni sotuvchining Telegramiga olib o'tadi. Xabar matni tayyor holda turadi.</p>
+      </div>
+      <div class="step">
+        <b>4</b>
+        <h3>Sotuvchi tasdiqlaydi</h3>
+        <p>Tovar topshirilgach, sotuvchi buyurtmani sizning ismingiz bo'yicha "Sotildi" deb belgilaydi.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="about" id="biz-haqimizda">
+  <div class="wrap about-grid">
+    <div>
+      <div class="section-head">
+        <div>
+          <h2>Biz haqimizda</h2>
+          <p>Laminated Glasses — rasmni oynaga bosish bo'yicha ixtisoslashgan ustaxona.</p>
+        </div>
+      </div>
+      <p class="about-text">Biz suratlaringizni zamonaviy laminatsiya texnologiyasi yordamida sifatli oynaga bosib beramiz. Har bir buyurtma diqqat bilan, rangi vaqt o'tishi bilan o'chmaydigan va namlikka chidamli natija berish maqsadida tayyorlanadi. Uy texnikasi ustki panellaridan tortib, devor va sovg'a oynalarigacha — ishimiz sifatga asoslangan.</p>
+      <p class="about-text">Xarid jarayonini ham imkon qadar soddalashtirganmiz: hech qanday ro'yxatdan o'tish, parol yoki ortiqcha ma'lumot talab qilinmaydi — faqat buyurtma uchun kerakli ism, va u ham bir marta.</p>
+    </div>
+    <div class="about-stats">
+      <div class="about-stat"><strong>7+</strong><span>yillik tajriba yo'nalishda</span></div>
+      <div class="about-stat"><strong>1000+</strong><span>bajarilgan buyurtma</span></div>
+      <div class="about-stat"><strong>100%</strong><span>sifatli laminatsiya</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="news" id="yangiliklar">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Yangiliklar</h2>
+        <p>Ustaxonadagi so'nggi yangilanishlar va e'lonlar.</p>
+      </div>
+    </div>
+    <div class="news-grid">
+      <article class="news-card">
+        <span class="news-date">Yangi</span>
+        <h3>Katalogga yangi dizaynlar qo'shildi</h3>
+        <p>Ustki oyna to'plamiga yangi rasmli dizaynlar qo'shildi — katalog bo'limida ko'rib chiqishingiz mumkin.</p>
+      </article>
+      <article class="news-card">
+        <span class="news-date">E'lon</span>
+        <h3>Buyurtma jarayoni soddalashtirildi</h3>
+        <p>Endi saytga kirishda ism so'ralmaydi — faqat "Savatga" tugmasi bosilganda va faqat bir marta so'raladi.</p>
+      </article>
+      <article class="news-card">
+        <span class="news-date">Maslahat</span>
+        <h3>O'lchamni to'g'ri tanlash</h3>
+        <p>Buyurtma berishdan oldin texnikangiz yoki devoringiz o'lchamini aniq o'lchab oling — bu jarayonni tezlashtiradi.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="rules" id="qoidalar">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Bilib qo'yishingiz kerak bo'lgan qoidalar</h2>
+        <p>Hammasi ochiq: qanday ishlashini oldindan aytamiz.</p>
+      </div>
+    </div>
+    <div class="rule-grid">
+      <div class="rule">
+        <h3>Ism — yagona talab</h3>
+        <p>Parol, telefon raqami yoki pochta so'ralmaydi. Saytga kirganingizda hech narsa so'ralmaydi — ism faqat "Savatga" tugmasi birinchi bosilganda so'raladi, chunki buyurtma shu ism bilan qayd qilinadi.</p>
+      </div>
+      <div class="rule">
+        <h3>Ism bir marotaba so'raladi va o'zgartirilmaydi</h3>
+        <p>Ismingiz brauzeringizdagi maxsus belgi bilan bazaga bir marta bog'lanadi va keyin o'zgartirib bo'lmaydi. Shu qurilmadan qayta kirsangiz, ism qaytadan so'ralmaydi. Boshqa telefon yoki brauzerdan kirsangiz — u yerda bir marta yana so'raladi.</p>
+      </div>
+      <div class="rule highlight">
+        <h3>Savat 7 kun turadi</h3>
+        <p>Savatga solingan har bir mahsulot 7 kun saqlanadi. Muddat tugagach, u savatdan o'zi chiqib ketadi. Mahsulotni qayta qo'shsangiz, muddat yangidan 7 kunga uzayadi.</p>
+      </div>
+      <div class="rule">
+        <h3>Savat — hali buyurtma emas</h3>
+        <p>Savatga solish hech narsani band qilmaydi va sizni hech narsaga majburlamaydi. Buyurtma faqat "Rasmiylashtirish" tugmasini bosgandan keyin ro'yxatga tushadi.</p>
+      </div>
+      <div class="rule highlight">
+        <h3>Rasmiylashtirish Telegramga olib o'tadi</h3>
+        <p>Rasmiylashtirgach buyurtma raqami beriladi va tayyor xabar bilan sotuvchining Telegrami ochiladi. Xabarda ismingiz, buyurtma raqami va tanlangan mahsulotlar bo'ladi — o'zingiz yozib o'tirmaysiz. Sotuvchining Telegram manzili saytning boshqa hech bir joyida ko'rsatilmaydi.</p>
+      </div>
+      <div class="rule">
+        <h3>Tasdiqlash sotuvchida</h3>
+        <p>Tovar sotilgach, sotuvchi buyurtmani boshqaruv panelida sizning ismingiz bo'yicha topib, "Sotildi" deb belgilaydi va qisqa izoh qoldiradi. Shundan keyin buyurtma yopilgan hisoblanadi.</p>
+      </div>
+      <div class="rule">
+        <h3>Narxlar so'mda</h3>
+        <p>Katalogdagi barcha narxlar so'mda va sotuv narxi hisoblanadi. Yetkazib berish narxi va muddati Telegramda kelishiladi.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="contact" id="aloqa">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2>Aloqa</h2>
+        <p>Bog'lanish buyurtma orqali amalga oshadi — shunday siz to'g'ridan-to'g'ri sotuvchi bilan bog'lanasiz.</p>
+      </div>
+    </div>
+    <div class="contact-grid">
+      <div class="contact-card">
+        <div class="contact-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/></svg>
+        </div>
+        <h3>Buyurtma orqali bog'lanish</h3>
+        <p>Katalogdan mahsulot tanlab, savatga soling va "Rasmiylashtirish" tugmasini bosing — tayyor xabar bilan sotuvchining Telegrami avtomatik ochiladi.</p>
+        <a href="#mahsulotlar" class="btn btn-primary btn-sm" style="margin-top:6px;">Mahsulotlarga o'tish</a>
+      </div>
+      <div class="contact-card">
+        <div class="contact-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        </div>
+        <h3>Ish vaqti</h3>
+        <p>Har kuni, 09:00 — 19:00. Buyurtmalar shu vaqt oralig'ida ko'rib chiqiladi va tasdiqlanadi.</p>
+      </div>
+      <div class="contact-card">
+        <div class="contact-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <h3>Yetkazib berish</h3>
+        <p>Yetkazib berish narxi va muddati buyurtma rasmiylashtirilgandan so'ng Telegramda alohida kelishiladi.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEAF5"/>
+        <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#g2)"/>
+        <defs><linearGradient id="g2" x1="12" y1="6" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#8CC4E8"/><stop offset="1" stop-color="#12557F"/>
+        </linearGradient></defs>
+      </svg>
+      <span>Laminated Glasses</span>
+    </div>
+    <p class="footer-note">© <span id="year"></span> Laminated Glasses. Buyurtma savat orqali rasmiylashtiriladi.</p>
+  </div>
+</footer>
+
+<!-- Savat -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<aside class="drawer" id="cartDrawer" aria-label="Savat">
+  <div class="drawer-head">
+    <h2>Savat</h2>
+    <button class="icon-close" id="cartCloseBtn" aria-label="Yopish">✕</button>
+  </div>
+  <div class="drawer-notice">Savatdagi mahsulotlar <strong>7 kun</strong> saqlanadi, keyin avtomatik o'chiriladi.</div>
+  <div class="drawer-body" id="cartBody"></div>
+  <div class="drawer-foot">
+    <div class="drawer-total">
+      <span>Jami</span>
+      <strong id="cartTotal">0 so'm</strong>
+    </div>
+    <button class="btn btn-accent btn-block" id="checkoutBtn">Rasmiylashtirish</button>
+    <button class="btn btn-ghost btn-block btn-sm" id="clearCartBtn" style="margin-top:9px;">Savatni bo'shatish</button>
+  </div>
+</aside>
+
+<!-- Mahsulot oynasi -->
+<div class="modal-overlay" id="productModal">
+  <div class="modal">
+    <button class="modal-close" id="productModalClose" aria-label="Yopish">✕</button>
+    <div class="modal-media" id="modalMedia"></div>
+    <div class="modal-body">
+      <span class="product-tag" id="modalCategory"></span>
+      <h3 id="modalName"></h3>
+      <p id="modalDesc"></p>
+      <div class="product-price" id="modalPrice"></div>
+      <button class="btn btn-primary btn-block" id="modalAddBtn" style="margin-top:8px;">Savatga qo'shish</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rasmiylashtirish natijasi: Telegram butun saytda faqat shu oynada -->
+<div class="modal-overlay" id="checkoutModal">
+  <div class="modal checkout-modal">
+    <button class="modal-close" id="checkoutModalClose" aria-label="Yopish">✕</button>
+    <span class="code" id="orderCode">LG-000000</span>
+    <h3>Buyurtmangiz qayd qilindi</h3>
+    <p id="checkoutText"></p>
+    <div class="order-preview" id="orderPreview"></div>
+    <a href="#" class="btn btn-accent btn-block" id="telegramBtn" target="_blank" rel="noopener">Telegramda yuborish</a>
+    <p style="margin:14px 0 0;font-size:0.8rem;">Telegram ochilgach, tayyor xabarni o'zgartirmasdan yuboring — sotuvchi buyurtmangizni shu raqam bo'yicha topadi.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/main.js"></script>
+</body>
+</html>
