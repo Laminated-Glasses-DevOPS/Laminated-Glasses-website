@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin panel — Laminated Glasses</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/admin.css" />
+</head>
+<body class="admin-body">
+
+<!-- ============ LOGIN ============ -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEDF8"/>
+      <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#gl)"/>
+      <defs>
+        <linearGradient id="gl" x1="12" y1="6" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#7FBDEA"/><stop offset="1" stop-color="#1F5F96"/>
+        </linearGradient>
+      </defs>
+    </svg>
+    <h1>Admin panel</h1>
+    <p class="sub">Laminated Glasses boshqaruv paneli</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="loginPassword">Parol</label>
+        <input type="password" id="loginPassword" placeholder="Parolni kiriting" required autofocus />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Kirish</button>
+      <div class="field-error" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ DASHBOARD ============ -->
+<div class="dash-shell" id="dashShell">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEDF8"/>
+        <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#gs)"/>
+        <defs>
+          <linearGradient id="gs" x1="12" y1="6" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#7FBDEA"/><stop offset="1" stop-color="#1F5F96"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>Laminated Glasses<small>admin panel</small></span>
+    </div>
+
+    <nav class="side-nav" id="sideNav">
+      <button data-view="products" class="active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        Mahsulotlar
+      </button>
+      <button data-view="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/></svg>
+        Buyurtmalar
+        <span class="order-badge" id="newOrdersBadge" style="display:none;margin-left:auto;background:#e0983a;color:#29190a;border-radius:999px;padding:1px 8px;font-size:0.72rem;font-weight:700;"></span>
+      </button>
+      <button data-view="categories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        Kategoriyalar
+      </button>
+      <button data-view="stats">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>
+        Statistika
+      </button>
+      <button data-view="analytics">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v6"/><path d="M8 7c0 2.2 1.8 4 4 4s4-1.8 4-4"/><path d="M12 13v8"/><path d="M9 21h6"/></svg>
+        Analitika
+      </button>
+      <button data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        Sozlamalar
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <button id="logoutBtn" class="btn btn-ghost btn-block btn-sm" style="border-color:rgba(255,255,255,0.25);color:#fff;">Chiqish</button>
+    </div>
+  </aside>
+
+  <main class="dash-main">
+
+    <!-- ---- Products view ---- -->
+    <section class="view active" id="view-products">
+      <div class="dash-topbar">
+        <div>
+          <h2>Mahsulotlar</h2>
+          <p>Rasm, tavsif, tannarx va sotish narxini shu yerdan boshqaring.</p>
+        </div>
+        <button class="btn btn-primary" id="openAddProductBtn">+ Yangi mahsulot</button>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <input type="text" id="productSearchAdmin" placeholder="Mahsulot qidirish..." style="max-width:260px;padding:10px 14px;border-radius:999px;border:1px solid var(--line);font-size:0.85rem;outline:none;" />
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Nomi</th>
+                <th>Kategoriya</th>
+                <th>Tannarx</th>
+                <th>Sotish narxi</th>
+                <th>Foyda</th>
+                <th>Holat</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="productsTableBody">
+              <tr class="empty-row"><td colspan="8">Yuklanmoqda...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- Orders view ---- -->
+    <section class="view" id="view-orders">
+      <div class="dash-topbar">
+        <div>
+          <h2>Buyurtmalar</h2>
+          <p>Mijoz saytga yozgan ismi bilan keladi. Tovarni topshirgach, "Sotildi" deb belgilang.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshOrdersBtn">Yangilash</button>
+      </div>
+
+      <div class="order-filters" id="orderFilters">
+        <button data-status="" class="active">Barchasi</button>
+        <button data-status="new">Yangi</button>
+        <button data-status="sold">Sotilgan</button>
+        <button data-status="cancelled">Bekor qilingan</button>
+      </div>
+
+      <div id="ordersList"><p class="empty-row" style="padding:20px;">Yuklanmoqda...</p></div>
+    </section>
+
+    <!-- ---- Categories view ---- -->
+    <section class="view" id="view-categories">
+      <div class="dash-topbar">
+        <div>
+          <h2>Kategoriyalar</h2>
+          <p>Mahsulotlar qaysi turkumlarga bo'linishini boshqaring.</p>
+        </div>
+      </div>
+      <div class="table-card" style="padding:22px 24px;">
+        <form id="addCategoryForm" style="display:flex;gap:10px;max-width:420px;">
+          <input type="text" id="newCategoryName" placeholder="Yangi kategoriya nomi" required style="flex:1;padding:11px 14px;border-radius:var(--radius-sm);border:1px solid var(--line);font-size:0.88rem;outline:none;" />
+          <button type="submit" class="btn btn-primary btn-sm">Qo'shish</button>
+        </form>
+        <div class="category-chip-list" id="categoryChipList"></div>
+      </div>
+    </section>
+
+    <!-- ---- Stats view ---- -->
+    <section class="view" id="view-stats">
+      <div class="dash-topbar">
+        <div>
+          <h2>Statistika</h2>
+          <p>Barcha mahsulotlar bo'yicha umumiy hisob-kitob.</p>
+        </div>
+      </div>
+      <div class="stat-grid" id="statsGrid">
+        <div class="stat-card"><span>Jami mahsulotlar</span><strong id="statTotalProducts">—</strong></div>
+        <div class="stat-card"><span>Faol mahsulotlar</span><strong id="statActiveProducts">—</strong></div>
+        <div class="stat-card"><span>Kategoriyalar</span><strong id="statTotalCategories">—</strong></div>
+        <div class="stat-card"><span>Umumiy tannarx</span><strong id="statTotalCost">—</strong></div>
+        <div class="stat-card"><span>Umumiy sotish summasi</span><strong id="statTotalRevenue">—</strong></div>
+        <div class="stat-card profit"><span>Umumiy sof foyda</span><strong id="statTotalProfit">—</strong></div>
+        <div class="stat-card"><span>O'rtacha foyda foizi</span><strong id="statAvgMargin">—</strong></div>
+        <div class="stat-card"><span>Jami buyurtmalar</span><strong id="statTotalOrders">—</strong></div>
+        <div class="stat-card"><span>Yangi buyurtmalar</span><strong id="statNewOrders">—</strong></div>
+        <div class="stat-card"><span>Sotilgan buyurtmalar</span><strong id="statSoldOrders">—</strong></div>
+        <div class="stat-card"><span>Sotuvdan tushgan summa</span><strong id="statSoldRevenue">—</strong></div>
+        <div class="stat-card profit"><span>Sotuvdan sof foyda</span><strong id="statSoldProfit">—</strong></div>
+      </div>
+    </section>
+
+    <!-- ---- Analytics view ---- -->
+    <section class="view" id="view-analytics">
+      <div class="dash-topbar">
+        <div>
+          <h2>Analitika</h2>
+          <p>Saytga bir kunda nechta odam kirganini ko'rsatadi. Bitta qurilma bir kunda necha marta kirsa ham — 1 ta ko'rish (view) hisoblanadi.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshAnalyticsBtn">Yangilash</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card"><span>Bugungi tashriflar</span><strong id="statTodayVisitors">—</strong></div>
+        <div class="stat-card"><span>Kechagi tashriflar</span><strong id="statYesterdayVisitors">—</strong></div>
+        <div class="stat-card"><span>Jami noyob qurilmalar</span><strong id="statTotalDevices">—</strong></div>
+        <div class="stat-card"><span>Jami ko'rishlar (barcha kunlar)</span><strong id="statTotalViews">—</strong></div>
+      </div>
+
+      <div class="table-card" style="padding:26px 24px 18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+          <h3 style="margin:0;font-family:var(--font-head);font-size:1.05rem;color:var(--navy);">Kunlik tashriflar daraxti</h3>
+          <p style="margin:0;font-size:0.8rem;color:var(--navy-soft);">Har bir ustun — bir kun ichidagi noyob qurilmalar soni.</p>
+        </div>
+        <div id="visitsChart" class="visits-chart"></div>
+      </div>
+    </section>
+
+    <!-- ---- Settings view ---- -->
+    <section class="view" id="view-settings">
+      <div class="dash-topbar">
+        <div>
+          <h2>Sozlamalar</h2>
+          <p>Admin parolini va mijozlar bilan bog'lanish uchun Telegram usernameni o'zgartiring.</p>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>Parolni o'zgartirish</h3>
+          <p class="sub">Xavfsizlik uchun standart parolni (7719) birinchi kirishdayoq almashtirish tavsiya etiladi.</p>
+          <form id="changePasswordForm">
+            <div class="field">
+              <label for="currentPassword">Joriy parol</label>
+              <input type="password" id="currentPassword" required />
+            </div>
+            <div class="field">
+              <label for="newPassword">Yangi parol</label>
+              <input type="password" id="newPassword" minlength="4" required />
+            </div>
+            <div class="field">
+              <label for="confirmPassword">Yangi parolni tasdiqlang</label>
+              <input type="password" id="confirmPassword" minlength="4" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Parolni saqlash</button>
+            <div class="field-error" id="passwordError"></div>
+            <div class="settings-success" id="passwordSuccess"></div>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>Telegram username</h3>
+          <p class="sub">Mijoz savatni rasmiylashtirganda shu username bilan chat ochiladi. Saytning boshqa joyida bu manzil ko'rsatilmaydi.</p>
+          <form id="telegramForm">
+            <div class="field">
+              <label for="telegramUsername">Username</label>
+              <input type="text" id="telegramUsername" placeholder="@laminated_glasses" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Saqlash</button>
+            <div class="field-error" id="telegramError"></div>
+            <div class="settings-success" id="telegramSuccess"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ Product add/edit modal ============ -->
+<div class="admin-modal-overlay" id="productFormOverlay">
+  <div class="admin-modal">
+    <h3 id="productFormTitle">Yangi mahsulot</h3>
+    <form id="productForm">
+      <input type="hidden" id="productId" />
+
+      <label class="image-drop" id="imageDropLabel">
+        <img id="imagePreview" style="display:none;" />
+        <span id="imageDropText">Rasm tanlash uchun bosing (JPG, PNG, WEBP)</span>
+        <input type="file" id="productImage" accept=".jpg,.jpeg,.png,.webp" />
+      </label>
+
+      <div class="field">
+        <label for="productName">Mahsulot nomi</label>
+        <input type="text" id="productName" required maxlength="200" />
+      </div>
+
+      <div class="field">
+        <label for="productCategory">Kategoriya</label>
+        <input type="text" id="productCategory" list="categoryOptions" required maxlength="120" placeholder="Masalan: Devor panellari" />
+        <datalist id="categoryOptions"></datalist>
+      </div>
+
+      <div class="field">
+        <label for="productDescription">Tavsif</label>
+        <textarea id="productDescription" maxlength="4000" placeholder="Mahsulot haqida qisqacha ma'lumot"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="productCostPrice">Tannarx (bizga tushgan narx)</label>
+          <input type="number" id="productCostPrice" min="0" step="1000" required />
+        </div>
+        <div class="field">
+          <label for="productSalePrice">Sotish narxi</label>
+          <input type="number" id="productSalePrice" min="0" step="1000" required />
+        </div>
+      </div>
+
+      <div class="profit-preview">
+        <span>Kutilayotgan sof foyda</span>
+        <strong id="profitPreviewValue">0 so'm</strong>
+      </div>
+
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:500;">
+          <input type="checkbox" id="productActive" checked style="width:auto;" />
+          Saytda ko'rinsin (faol)
+        </label>
+      </div>
+
+      <div class="field-error" id="productFormError"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancelProductFormBtn">Bekor qilish</button>
+        <button type="submit" class="btn btn-primary" id="saveProductBtn">Saqlash</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/admin.js"></script>
+</body>
+</html>
