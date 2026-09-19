@@ -246,11 +246,14 @@ const productForm = document.getElementById("productForm");
 const imagePreview = document.getElementById("imagePreview");
 const imageDropText = document.getElementById("imageDropText");
 let selectedImageFile = null;
+let selectedImageFiles = [];
 let editingProductId = null;
 
 function openProductForm(product = null) {
   productForm.reset();
   selectedImageFile = null;
+  selectedImageFiles = [];
+  document.getElementById("imagePreviews").innerHTML = "";
   editingProductId = product ? product.id : null;
   document.getElementById("productFormError").textContent = "";
   document.getElementById("productFormTitle").textContent = product ? "Mahsulotni tahrirlash" : "Yangi mahsulot";
@@ -265,7 +268,14 @@ function openProductForm(product = null) {
     if (product.image_url) {
       imagePreview.src = `${API_BASE_URL.replace(/\/api$/, "")}${product.image_url}`;
       imagePreview.style.display = "block";
-      imageDropText.textContent = "Rasmni almashtirish uchun bosing";
+      imageDropText.textContent = `${(product.image_urls || [product.image_url]).length} ta saqlangan rasm. Yangilarini tanlab galereyani almashtiring.`;
+      const previews = document.getElementById("imagePreviews");
+      (product.image_urls || [product.image_url]).forEach((url) => {
+        const img = document.createElement("img");
+        img.src = `${API_BASE_URL.replace(/\/api$/, "")}${url}`;
+        img.style.cssText = "width:64px;height:54px;object-fit:cover;border-radius:7px;margin:3px";
+        previews.appendChild(img);
+      });
     } else {
       imagePreview.style.display = "none";
       imageDropText.textContent = "Rasm tanlash uchun bosing (JPG, PNG, WEBP)";
@@ -291,16 +301,17 @@ productFormOverlay.addEventListener("click", (e) => {
 });
 
 document.getElementById("productImage").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  selectedImageFile = file;
-  const reader = new FileReader();
-  reader.onload = () => {
-    imagePreview.src = reader.result;
-    imagePreview.style.display = "block";
-    imageDropText.textContent = file.name;
-  };
-  reader.readAsDataURL(file);
+  selectedImageFiles = Array.from(e.target.files || []);
+  selectedImageFile = selectedImageFiles[0] || null;
+  const previews = document.getElementById("imagePreviews");
+  previews.innerHTML = "";
+  selectedImageFiles.forEach((file) => {
+    const img = document.createElement("img");
+    img.alt = file.name; img.title = file.name;
+    img.style.cssText = "width:72px;height:60px;object-fit:cover;border-radius:8px;margin:4px";
+    img.src = URL.createObjectURL(file); previews.appendChild(img);
+  });
+  if (selectedImageFiles.length) imageDropText.textContent = `${selectedImageFiles.length} ta rasm tanlandi`;
 });
 
 function updateProfitPreview() {
@@ -330,7 +341,7 @@ productForm.addEventListener("submit", async (e) => {
   formData.append("cost_price", document.getElementById("productCostPrice").value);
   formData.append("sale_price", document.getElementById("productSalePrice").value);
   formData.append("is_active", document.getElementById("productActive").checked ? "true" : "false");
-  if (selectedImageFile) formData.append("image", selectedImageFile);
+  selectedImageFiles.forEach((file) => formData.append("images", file));
 
   try {
     if (editingProductId) {
@@ -727,3 +738,39 @@ async function loadEverything() {
 /* ---------- Init ---------- */
 
 verifyExistingToken();
+
+// News CRUD + contact/social links
+async function loadAdminNews(){
+ const list=document.getElementById('adminNewsList'); if(!list)return;
+ try{const items=await apiRequest('/admin/news');list.innerHTML=items.length?items.map(n=>`<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><strong>${escapeHtml(n.title)}</strong><div class="sub">${n.is_published?'E’lon qilingan':'Qoralama'} · ${new Date(n.created_at).toLocaleDateString('uz-UZ')}</div></div><div><button class="btn btn-ghost btn-sm" data-edit-news="${n.id}">Tahrirlash</button> <button class="btn btn-ghost btn-sm" data-del-news="${n.id}">O‘chirish</button></div></div>`).join(''):'Hozircha yangilik yo‘q.';}catch(e){list.textContent=e.message;}
+}
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function closeNewsForm(){document.getElementById('newsFormOverlay').style.display='none';}
+async function editNews(id=null){
+ let old=null;
+ if(id){old=(await apiRequest('/admin/news')).find(n=>n.id===id);if(!old)return;}
+ document.getElementById('newsEditId').value=old?.id||'';
+ document.getElementById('newsFormHeading').textContent=old?'Yangilikni tahrirlash':'Yangi yangilik qo‘shish';
+ document.getElementById('newsTitle').value=old?.title||'';
+ document.getElementById('newsExcerpt').value=old?.excerpt||'';
+ document.getElementById('newsBody').value=old?.body||'';
+ document.getElementById('newsImage').value=old?.image_url||'';
+ document.getElementById('newsPublished').checked=old?!!old.is_published:true;
+ document.getElementById('newsFormOverlay').style.display='flex';
+ document.getElementById('newsTitle').focus();
+}
+document.getElementById('newsForm')?.addEventListener('submit',async e=>{
+ e.preventDefault();const id=document.getElementById('newsEditId').value;
+ const payload={title:document.getElementById('newsTitle').value.trim(),excerpt:document.getElementById('newsExcerpt').value.trim(),body:document.getElementById('newsBody').value.trim(),image_url:document.getElementById('newsImage').value.trim()||null,is_published:document.getElementById('newsPublished').checked};
+ if(payload.title.length<2||!payload.body){showToast('Sarlavha va to‘liq matnni kiriting',true);return;}
+ const btn=document.getElementById('saveNewsBtn');btn.disabled=true;btn.textContent='Saqlanmoqda…';
+ try{await apiRequest(id?`/admin/news/${id}`:'/admin/news',{method:id?'PUT':'POST',body:JSON.stringify(payload)});closeNewsForm();showToast('Yangilik saqlandi');await loadAdminNews();}
+ catch(err){showToast(err.message,true);}finally{btn.disabled=false;btn.textContent='Yangilikni saqlash';}
+});
+['closeNewsFormBtn','cancelNewsFormBtn'].forEach(id=>document.getElementById(id)?.addEventListener('click',closeNewsForm));
+document.getElementById('newsFormOverlay')?.addEventListener('click',e=>{if(e.target.id==='newsFormOverlay')closeNewsForm();});
+document.getElementById('addNewsBtn')?.addEventListener('click',()=>editNews());
+document.getElementById('adminNewsList')?.addEventListener('click',async e=>{const edit=e.target.closest('[data-edit-news]'),del=e.target.closest('[data-del-news]');try{if(edit)await editNews(Number(edit.dataset.editNews));if(del&&confirm('Yangilikni o‘chirasizmi?')){await apiRequest(`/admin/news/${del.dataset.delNews}`,{method:'DELETE'});loadAdminNews();}}catch(err){showToast(err.message,true);}});
+document.getElementById('sideNav')?.addEventListener('click',e=>{if(e.target.closest('[data-view="news"]')){loadAdminNews();loadSiteLinks();}});
+async function loadSiteLinks(){try{const d=await apiRequest('/admin/site-links');({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}&&Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}).forEach(([k,id])=>document.getElementById(id).value=d[k]||''));}catch(e){showToast(e.message,true);}}
+document.getElementById('siteLinksForm')?.addEventListener('submit',async e=>{e.preventDefault();try{for(const [k,id] of Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}))await apiRequest(`/admin/site-links/${k}`,{method:'PUT',body:JSON.stringify({value:document.getElementById(id).value.trim()})});showToast('Aloqa ma’lumotlari saqlandi');}catch(err){showToast(err.message,true);}});

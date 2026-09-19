@@ -165,9 +165,8 @@ el("gateForm").addEventListener("submit", async (e) => {
 /* Katalog */
 
 function mediaHTML(product) {
-  if (product.image_url) {
-    return `<img src="${MEDIA_BASE}${product.image_url}" alt="${escapeHtml(product.name)}" loading="lazy" />`;
-  }
+  const urls = (product.image_urls && product.image_urls.length ? product.image_urls : (product.image_url ? [product.image_url] : []));
+  if (urls.length) return `<div class="product-gallery" data-gallery="${product.id}">${urls.map((u,i)=>`<img class="gallery-shot ${i===0?'active':''}" src="${MEDIA_BASE}${u}" alt="${escapeHtml(product.name)} — ${i+1}" loading="eager" />`).join("")}<span class="gallery-count">${urls.length > 1 ? `1 / ${urls.length}` : ""}</span></div>`;
   return `<div class="no-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 15 5-5 4 4 4-4 5 5"/></svg></div>`;
 }
 
@@ -222,6 +221,44 @@ function renderProducts() {
     )
     .join("");
 
+  grid.querySelectorAll(".product-gallery").forEach((gallery) => {
+    const shots = Array.from(gallery.querySelectorAll(".gallery-shot"));
+    if (shots.length < 2) return;
+    let current = 0;
+    let timer = null;
+    const advance = () => {
+      if (!gallery.isConnected) { clearInterval(timer); return; }
+      const next = (current + 1) % shots.length;
+      shots[current].classList.remove("active");
+      // Force the browser to commit the outgoing frame before activating next.
+      void shots[next].offsetWidth;
+      shots[next].classList.add("active");
+      current = next;
+      const count = gallery.querySelector(".gallery-count");
+      if (count) count.textContent = `${current + 1} / ${shots.length}`;
+    };
+    const startSlideshow = () => {
+      if (timer) return;
+      gallery.classList.add("is-playing");
+      advance(); // immediate visible response on hover/click
+      timer = window.setInterval(advance, 2200);
+    };
+    const stopSlideshow = () => {
+      clearInterval(timer); timer = null;
+      gallery.classList.remove("is-playing");
+    };
+    gallery.addEventListener("mouseenter", startSlideshow);
+    gallery.addEventListener("focusin", startSlideshow);
+    gallery.addEventListener("click", (event) => {
+      // Clicking the image begins cycling; card click still opens detail modal.
+      startSlideshow();
+    });
+    gallery.addEventListener("mouseleave", stopSlideshow);
+    gallery.addEventListener("focusout", (event) => {
+      if (!gallery.contains(event.relatedTarget)) stopSlideshow();
+    });
+  });
+
   grid.querySelectorAll("[data-add]").forEach((btn) => {
     btn.addEventListener("click", () => addToCart(Number(btn.dataset.add)));
   });
@@ -268,7 +305,37 @@ el("searchInput").addEventListener("input", (e) => {
 
 function openProduct(product) {
   state.activeProduct = product;
-  el("modalMedia").innerHTML = mediaHTML(product);
+  const urls = (product.image_urls && product.image_urls.length ? product.image_urls : (product.image_url ? [product.image_url] : []));
+  const media = el("modalMedia");
+  media.innerHTML = urls.length ? `
+    <div class="detail-gallery" data-index="0">
+      <button class="detail-arrow prev" type="button" aria-label="Oldingi rasm">‹</button>
+      <img class="detail-main-image" src="${MEDIA_BASE}${urls[0]}" alt="${escapeHtml(product.name)}" />
+      <button class="detail-arrow next" type="button" aria-label="Keyingi rasm">›</button>
+      <button class="detail-zoom" type="button">⤢ Kattalashtirish</button>
+      <span class="detail-counter">1 / ${urls.length}</span>
+    </div>
+    ${urls.length > 1 ? `<div class="detail-thumbs">${urls.map((u,i)=>`<button class="detail-thumb ${i===0?'active':''}" data-thumb="${i}" type="button"><img src="${MEDIA_BASE}${u}" alt="${escapeHtml(product.name)} ${i+1}" /></button>`).join("")}</div>` : ""}` : mediaHTML(product);
+  const showIndex = (idx) => {
+    const gallery = media.querySelector('.detail-gallery'); if (!gallery || !urls.length) return;
+    idx = (idx + urls.length) % urls.length; gallery.dataset.index = idx;
+    gallery.querySelector('.detail-main-image').src = MEDIA_BASE + urls[idx];
+    gallery.querySelector('.detail-counter').textContent = `${idx+1} / ${urls.length}`;
+    media.querySelectorAll('.detail-thumb').forEach((b,i)=>b.classList.toggle('active', i===idx));
+  };
+  media.querySelector('.prev')?.addEventListener('click', e=>{e.stopPropagation();showIndex(Number(media.querySelector('.detail-gallery').dataset.index)-1)});
+  media.querySelector('.next')?.addEventListener('click', e=>{e.stopPropagation();showIndex(Number(media.querySelector('.detail-gallery').dataset.index)+1)});
+  media.querySelectorAll('[data-thumb]').forEach(b=>b.addEventListener('click',()=>showIndex(Number(b.dataset.thumb))));
+  const zoom = () => {
+    const idx=Number(media.querySelector('.detail-gallery')?.dataset.index||0); if(!urls.length)return;
+    let lb=document.getElementById('productLightbox');
+    if(!lb){lb=document.createElement('div');lb.id='productLightbox';lb.className='product-lightbox';lb.innerHTML='<button class="lightbox-close" aria-label="Yopish">×</button><button class="lightbox-prev">‹</button><img alt="Mahsulot rasmi"><button class="lightbox-next">›</button><span class="lightbox-count"></span>';document.body.appendChild(lb);}
+    let li=idx; const paint=()=>{lb.querySelector('img').src=MEDIA_BASE+urls[li];lb.querySelector('.lightbox-count').textContent=`${li+1} / ${urls.length}`;};
+    lb.classList.add('open'); paint(); lb.querySelector('.lightbox-close').onclick=()=>lb.classList.remove('open');
+    lb.querySelector('.lightbox-prev').onclick=()=>{li=(li+urls.length-1)%urls.length;paint()};lb.querySelector('.lightbox-next').onclick=()=>{li=(li+1)%urls.length;paint()};lb.onclick=e=>{if(e.target===lb)lb.classList.remove('open')};
+  };
+  media.querySelector('.detail-main-image')?.addEventListener('click',zoom);
+  media.querySelector('.detail-zoom')?.addEventListener('click',zoom);
   el("modalCategory").textContent = product.category;
   el("modalName").textContent = product.name;
   el("modalDesc").textContent = product.description || "Tavsif kiritilmagan.";

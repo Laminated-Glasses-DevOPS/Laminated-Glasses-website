@@ -69,9 +69,8 @@
 
 <section class="hero" id="bosh-sahifa">
   <div class="wrap">
-    <div class="hero-copy">
-      <span class="hero-eyebrow"><span class="eyebrow-dot"></span> LAMINATED GLASSES · PREMIUM OYNA DIZAYNI</span>
-      <h1>Rasmingiz endi <em>oyna ichida</em> yashaydi</h1>
+    <div>
+      <h1>Your Space. Your Signature.</h1>
       <p>Suratingizni laminatsiya texnologiyasi bilan oynaga bosamiz. Uy, ofis yoki sovg'a uchun — namlikdan qo'rqmaydigan, rangi o'chmaydigan natija.</p>
       <div class="hero-actions">
         <a href="/mahsulotlar" class="btn btn-primary">Mahsulotlarni ko'rish</a>
@@ -83,11 +82,11 @@
         <div><strong id="statCartDays">7</strong><span>kun savatda saqlanadi</span></div>
       </div>
     </div>
-    <div class="hero-showcase"><div class="showcase-orbit orbit-one"></div><div class="showcase-orbit orbit-two"></div><div class="glass-visual" aria-hidden="true">
+    <div class="glass-visual" aria-hidden="true">
       <div class="pane pane-back"></div>
       <div class="pane pane-front"></div>
-      <div class="glass-badge"><span class="badge-check">✓</span> Chiroyli ko‘rinish · Mustahkam himoya</div>
-    </div><div class="showcase-caption"><span class="caption-line"></span><span>Har bir detalda nafislik</span></div></div>
+      <div class="glass-badge">Chizilmaydi, xira tortmaydi</div>
+    </div>
   </div>
 </section>
 
@@ -358,9 +357,12 @@
 <script src="/js/main.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded",()=>{
- const visible=['bosh-sahifa', 'xizmatlar', 'qanday-ishlaydi', 'qoidalar'];
+ const visible=['yangiliklar'];
  document.querySelectorAll("body > section").forEach(sec=>{if(!visible.includes(sec.id)) sec.style.display="none";});
  document.querySelectorAll("body > footer").forEach(f=>{});
 });
 </script></body>
 </html>
+<script>
+document.addEventListener('DOMContentLoaded',async()=>{const grid=document.querySelector('#yangiliklar .news-grid');if(!grid)return;try{const r=await fetch('/api/news');if(!r.ok)return;const items=await r.json();if(!items.length){grid.innerHTML='<p>Hozircha yangiliklar mavjud emas.</p>';return;}grid.innerHTML=items.map(n=>`<article class="news-card">${n.image_url?`<img src="${String(n.image_url).replace(/"/g,'&quot;')}" alt="" style="width:100%;border-radius:12px;object-fit:cover;max-height:220px">`:''}<span class="news-date">${new Date(n.created_at).toLocaleDateString('uz-UZ')}</span><h3>${String(n.title).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</h3><p>${String(n.excerpt||n.body||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p></article>`).join('');}catch(e){console.warn('Yangiliklarni yuklash imkonsiz',e);}});
+</script>

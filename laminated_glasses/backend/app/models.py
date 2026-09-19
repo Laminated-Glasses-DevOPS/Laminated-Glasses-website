@@ -38,6 +38,7 @@ class Product(Base):
     sale_price = Column(Float, nullable=False, default=0.0)
 
     image_filename = Column(String(255), nullable=True)
+    images_json = Column(Text, nullable=False, default="[]")
     is_active = Column(Integer, default=1)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -192,3 +193,21 @@ class LoginAttempt(Base):
     attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NewsPost(Base):
+    __tablename__ = "news_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(220), nullable=False)
+    excerpt = Column(Text, nullable=False, default="")
+    body = Column(Text, nullable=False, default="")
+    image_url = Column(String(500), nullable=True)
+    is_published = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SiteLink(Base):
+    __tablename__ = "site_links"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(40), unique=True, nullable=False, index=True)
+    value = Column(String(500), nullable=False, default="")

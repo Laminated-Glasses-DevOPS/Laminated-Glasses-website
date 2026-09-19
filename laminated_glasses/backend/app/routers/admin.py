@@ -1,6 +1,7 @@
 """Admin API -- faqat to'g'ri JWT tokeni bo'lganlar kira oladigan qism."""
 
 from datetime import datetime, timedelta
+import json
 from typing import List, Optional
 
 from fastapi import (
@@ -51,6 +52,12 @@ def verify_token(_admin=Depends(security.get_current_admin)):
     return {"valid": True}
 
 
+def _product_images(p):
+    try: items = json.loads(p.images_json or "[]")
+    except Exception: items = []
+    if not items and p.image_filename: items = [p.image_filename]
+    return items
+
 def _to_admin_schema(p: models.Product) -> schemas.ProductAdmin:
     return schemas.ProductAdmin(
         id=p.id,
@@ -62,6 +69,7 @@ def _to_admin_schema(p: models.Product) -> schemas.ProductAdmin:
         profit=p.profit,
         profit_margin_percent=p.profit_margin_percent,
         image_url=utils.build_image_url(p.image_filename),
+        image_urls=[utils.build_image_url(x) for x in _product_images(p)],
         is_active=bool(p.is_active),
         created_at=p.created_at,
         updated_at=p.updated_at,
@@ -85,10 +93,14 @@ def create_product(
     sale_price: float = Form(..., ge=0),
     is_active: bool = Form(True),
     image: Optional[UploadFile] = File(None),
+    images: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
     _admin=Depends(security.get_current_admin),
 ):
-    image_filename = utils.save_product_image(image) if image and image.filename else None
+    files = [f for f in images if f and f.filename]
+    if image and image.filename: files.insert(0, image)
+    saved = [utils.save_product_image(f) for f in files]
+    image_filename = saved[0] if saved else None
 
     product = models.Product(
         name=name.strip(),
@@ -98,6 +110,7 @@ def create_product(
         sale_price=sale_price,
         is_active=1 if is_active else 0,
         image_filename=image_filename,
+        images_json=json.dumps(saved),
     )
     db.add(product)
 
@@ -119,6 +132,7 @@ def update_product(
     sale_price: Optional[float] = Form(None, ge=0),
     is_active: Optional[bool] = Form(None),
     image: Optional[UploadFile] = File(None),
+    images: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
     _admin=Depends(security.get_current_admin),
 ):
@@ -141,10 +155,12 @@ def update_product(
     if is_active is not None:
         product.is_active = 1 if is_active else 0
 
-    if image and image.filename:
-        new_filename = utils.save_product_image(image)
-        utils.delete_product_image(product.image_filename)
-        product.image_filename = new_filename
+    files = [f for f in images if f and f.filename]
+    if image and image.filename: files.insert(0, image)
+    if files:
+        new_files = [utils.save_product_image(f) for f in files]
+        product.images_json = json.dumps(new_files)
+        product.image_filename = new_files[0]
 
     db.commit()
     db.refresh(product)
@@ -413,3 +429,51 @@ def get_analytics(
         total_views=total_views,
         daily=daily,
     )
+
+# Yangiliklar va aloqa havolalarini boshqarish (JWT bilan himoyalangan).
+from pydantic import BaseModel, Field
+
+class NewsPayload(BaseModel):
+    title: str = Field(min_length=2, max_length=220)
+    excerpt: str = Field(default="", max_length=1000)
+    body: str = Field(default="", max_length=12000)
+    image_url: Optional[str] = Field(default=None, max_length=500)
+    is_published: bool = True
+
+class LinkPayload(BaseModel):
+    value: str = Field(default="", max_length=500)
+
+@router.get("/news")
+def admin_news(db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    return db.query(models.NewsPost).order_by(models.NewsPost.created_at.desc()).all()
+
+@router.post("/news", status_code=201)
+def create_news(payload: NewsPayload, db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    item = models.NewsPost(**payload.model_dump())
+    db.add(item); db.commit(); db.refresh(item); return item
+
+@router.put("/news/{news_id}")
+def update_news(news_id: int, payload: NewsPayload, db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    item = db.query(models.NewsPost).filter_by(id=news_id).first()
+    if not item: raise HTTPException(status_code=404, detail="Yangilik topilmadi")
+    for k,v in payload.model_dump().items(): setattr(item,k,v)
+    item.updated_at = datetime.utcnow(); db.commit(); db.refresh(item); return item
+
+@router.delete("/news/{news_id}", status_code=204)
+def delete_news(news_id: int, db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    item = db.query(models.NewsPost).filter_by(id=news_id).first()
+    if not item: raise HTTPException(status_code=404, detail="Yangilik topilmadi")
+    db.delete(item); db.commit()
+
+@router.get("/site-links")
+def admin_site_links(db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    return {x.key:x.value for x in db.query(models.SiteLink).all()}
+
+@router.put("/site-links/{key}")
+def update_site_link(key: str, payload: LinkPayload, db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)):
+    if key not in {"instagram","telegram","youtube","phone","address","email"}:
+        raise HTTPException(status_code=400, detail="Noto'g'ri maydon")
+    item=db.query(models.SiteLink).filter_by(key=key).first()
+    if not item: item=models.SiteLink(key=key,value=payload.value); db.add(item)
+    else: item.value=payload.value
+    db.commit(); return {"key":key,"value":payload.value}

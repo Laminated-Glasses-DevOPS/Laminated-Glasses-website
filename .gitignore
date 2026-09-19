@@ -1,0 +1,14 @@
+
+# Local secrets and environment
+.env
+*.db
+.secret_key
+backend/app/.secret_key
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local virtual environments
+venv/
+.venv/

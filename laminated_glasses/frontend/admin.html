@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/admin.css" />
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body class="admin-body">
 
@@ -76,6 +76,9 @@
       <button data-view="analytics">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v6"/><path d="M8 7c0 2.2 1.8 4 4 4s4-1.8 4-4"/><path d="M12 13v8"/><path d="M9 21h6"/></svg>
         Analitika
+      </button>
+      <button data-view="news">
+        <span>Yangiliklar</span>
       </button>
       <button data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -213,6 +216,19 @@
       </div>
     </section>
 
+    <!-- Yangiliklar boshqaruvi -->
+    <section class="view" id="view-news">
+      <div class="dash-topbar"><div><h2>Yangiliklar</h2><p>Saytda e’lon qilinadigan maqolalarni boshqaring.</p></div><button class="btn btn-primary" id="addNewsBtn">+ Yangilik qo‘shish</button></div>
+      <div class="table-card" style="padding:20px"><div id="adminNewsList">Yangiliklar yuklanmoqda...</div></div>
+      <div class="settings-card" style="margin-top:20px"><h3>Aloqa va ijtimoiy tarmoqlar</h3><p class="sub">Bo‘sh qoldirilgan havolalar saytda ko‘rsatilmaydi.</p>
+      <form id="siteLinksForm"><div class="form-row" style="flex-wrap:wrap">
+      <div class="field"><label>Instagram URL</label><input id="linkInstagram" type="url" placeholder="https://instagram.com/..." /></div>
+      <div class="field"><label>Telegram URL</label><input id="linkTelegram" type="url" placeholder="https://t.me/..." /></div>
+      <div class="field"><label>YouTube URL</label><input id="linkYoutube" type="url" placeholder="https://youtube.com/..." /></div>
+      <div class="field"><label>Telefon</label><input id="linkPhone" type="text" /></div><div class="field"><label>Manzil</label><input id="linkAddress" type="text" /></div><div class="field"><label>Email</label><input id="linkEmail" type="email" /></div>
+      </div><button class="btn btn-primary" type="submit">Aloqa ma’lumotlarini saqlash</button></form></div>
+    </section>
+
     <!-- ---- Settings view ---- -->
     <section class="view" id="view-settings">
       <div class="dash-topbar">
@@ -273,8 +289,8 @@
 
       <label class="image-drop" id="imageDropLabel">
         <img id="imagePreview" style="display:none;" />
-        <span id="imageDropText">Rasm tanlash uchun bosing (JPG, PNG, WEBP)</span>
-        <input type="file" id="productImage" accept=".jpg,.jpeg,.png,.webp" />
+        <span id="imageDropText">Bir yoki bir nechta rasm tanlang (JPG, PNG, WEBP)</span><div id="imagePreviews" class="image-previews"></div>
+        <input type="file" id="productImage" accept=".jpg,.jpeg,.png,.webp" multiple />
       </label>
 
       <div class="field">
@@ -326,8 +342,22 @@
   </div>
 </div>
 
+<div class="admin-modal-overlay" id="newsFormOverlay" style="display:none;position:fixed;inset:0;z-index:1000;background:#071629a8;overflow:auto;padding:24px;align-items:center;justify-content:center">
+ <div class="admin-modal" style="width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:20px;padding:28px">
+  <div class="dash-topbar"><div><h2 id="newsFormHeading">Yangi yangilik</h2><p class="sub">Yangilikni shu sahifada to‘ldiring va saqlang.</p></div><button type="button" class="btn btn-ghost" id="closeNewsFormBtn">✕</button></div>
+  <form id="newsForm"><input type="hidden" id="newsEditId" />
+   <div class="field"><label for="newsTitle">Sarlavha *</label><input id="newsTitle" required minlength="2" maxlength="180" placeholder="Yangilik sarlavhasi" /></div>
+   <div class="field"><label for="newsExcerpt">Qisqa tavsif</label><textarea id="newsExcerpt" rows="3" placeholder="Qisqacha mazmun"></textarea></div>
+   <div class="field"><label for="newsBody">To‘liq matn *</label><textarea id="newsBody" rows="8" required placeholder="Yangilik matnini kiriting"></textarea></div>
+   <div class="field"><label for="newsImage">Rasm URL (ixtiyoriy)</label><input id="newsImage" type="url" placeholder="https://..." /></div>
+   <label style="display:flex;gap:10px;align-items:center;margin:16px 0"><input type="checkbox" id="newsPublished" checked style="width:auto"/> Saytda e’lon qilinsin</label>
+   <div class="modal-actions"><button type="button" class="btn btn-ghost" id="cancelNewsFormBtn">Bekor qilish</button><button type="submit" class="btn btn-primary" id="saveNewsBtn">Yangilikni saqlash</button></div>
+  </form>
+ </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script src="js/admin.js"></script>
+<script src="/js/admin.js"></script>
 </body>
 </html>

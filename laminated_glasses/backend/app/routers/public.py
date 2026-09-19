@@ -5,6 +5,7 @@ faqat bitta joyda -- buyurtmani rasmiylashtirish (checkout) javobida beriladi.
 """
 
 from datetime import datetime, timedelta
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +17,12 @@ from ..database import get_db
 
 router = APIRouter(tags=["Public"])
 
+
+def _product_images(p):
+    try: items = json.loads(p.images_json or "[]")
+    except Exception: items = []
+    if not items and p.image_filename: items = [p.image_filename]
+    return items
 
 def _settings(db: Session) -> models.SiteSettings:
     settings = db.query(models.SiteSettings).first()
@@ -94,6 +101,7 @@ def list_products(
             category=p.category,
             sale_price=p.sale_price,
             image_url=utils.build_image_url(p.image_filename),
+            image_urls=[utils.build_image_url(x) for x in _product_images(p)],
         )
         for p in products
     ]
@@ -115,6 +123,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         category=product.category,
         sale_price=product.sale_price,
         image_url=utils.build_image_url(product.image_filename),
+        image_urls=[utils.build_image_url(x) for x in _product_images(product)],
     )
 
 
@@ -365,3 +374,11 @@ def checkout(payload: schemas.CheckoutIn, db: Session = Depends(get_db)):
         telegram_url=utils.telegram_url(settings.telegram_username, message_text),
         message_text=message_text,
     )
+
+@router.get("/news")
+def public_news(db: Session = Depends(get_db)):
+    return db.query(models.NewsPost).filter_by(is_published=1).order_by(models.NewsPost.created_at.desc()).all()
+
+@router.get("/site-links")
+def public_site_links(db: Session = Depends(get_db)):
+    return {x.key:x.value for x in db.query(models.SiteLink).all() if x.value}

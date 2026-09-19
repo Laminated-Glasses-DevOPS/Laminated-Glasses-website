@@ -19,6 +19,7 @@ class ProductPublic(BaseModel):
     category: str
     sale_price: float
     image_url: Optional[str] = None
+    image_urls: List[str] = []
 
     class Config:
         from_attributes = True
@@ -117,6 +118,7 @@ class ProductAdmin(BaseModel):
     profit: float
     profit_margin_percent: float
     image_url: Optional[str] = None
+    image_urls: List[str] = []
     is_active: bool
     created_at: datetime
     updated_at: datetime
