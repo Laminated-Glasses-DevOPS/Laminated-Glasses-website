@@ -164,9 +164,12 @@ el("gateForm").addEventListener("submit", async (e) => {
 
 /* Katalog */
 
-function mediaHTML(product) {
+function mediaHTML(product, index = 1) {
   const urls = (product.image_urls && product.image_urls.length ? product.image_urls : (product.image_url ? [product.image_url] : []));
-  if (urls.length) return `<div class="product-gallery" data-gallery="${product.id}">${urls.map((u,i)=>`<img class="gallery-shot ${i===0?'active':''}" src="${MEDIA_BASE}${u}" alt="${escapeHtml(product.name)} — ${i+1}" loading="eager" />`).join("")}<span class="gallery-count">${urls.length > 1 ? `1 / ${urls.length}` : ""}</span></div>`;
+  // Faqat birinchi qatordagi kartalarning birinchi rasmi darhol yuklanadi (LCP),
+  // qolganlari va galereyaning keyingi kadrlari faqat ko'rinish oldidan yuklanadi.
+  const eager = index <= 4;
+  if (urls.length) return `<div class="product-gallery" data-gallery="${product.id}">${urls.map((u,i)=>`<img class="gallery-shot ${i===0?'active':''}" src="${MEDIA_BASE}${u}" alt="${escapeHtml(product.name)} — ${i+1}" loading="${eager && i===0 ? 'eager' : 'lazy'}" decoding="async" />`).join("")}<span class="gallery-count">${urls.length > 1 ? `1 / ${urls.length}` : ""}</span></div>`;
   return `<div class="no-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 15 5-5 4 4 4-4 5 5"/></svg></div>`;
 }
 
@@ -205,9 +208,9 @@ function renderProducts() {
 
   grid.innerHTML = state.products
     .map(
-      (p) => `
-      <article class="product-card" data-id="${p.id}">
-        <div class="product-media" data-open="${p.id}">${mediaHTML(p)}</div>
+      (p, i) => `
+      <article class="product-card reveal" data-id="${p.id}">
+        <div class="product-media" data-open="${p.id}">${mediaHTML(p, i)}</div>
         <div class="product-body">
           <span class="product-tag">${escapeHtml(p.category)}</span>
           <h3 class="product-name" data-open="${p.id}">${escapeHtml(p.name)}</h3>
@@ -269,6 +272,40 @@ function renderProducts() {
       if (product) openProduct(product);
     });
   });
+
+  observeReveal(grid.querySelectorAll(".reveal"));
+}
+
+/* Scroll bilan ochiladigan animatsiya — element ko'rinish maydoniga
+   kirganda bir marotaba ravon paydo bo'ladi, keyin kuzatuv to'xtaydi. */
+let revealObserver = null;
+function observeReveal(nodes) {
+  if (!("IntersectionObserver" in window) || !nodes || !nodes.length) {
+    (nodes || []).forEach((n) => n.classList.add("in-view"));
+    return;
+  }
+  if (!revealObserver) {
+    revealObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in-view");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+    );
+  }
+  nodes.forEach((n) => revealObserver.observe(n));
+}
+
+function initScrollReveal() {
+  const targets = document.querySelectorAll(
+    ".service-card, .step, .news-card, .rule, .contact-card, .about-stat"
+  );
+  targets.forEach((t) => t.classList.add("reveal"));
+  observeReveal(targets);
 }
 
 async function loadProducts() {
@@ -376,7 +413,7 @@ function renderCart() {
       <div class="cart-row" data-id="${item.id}">
         ${
           item.image_url
-            ? `<img class="cart-thumb" src="${MEDIA_BASE}${item.image_url}" alt="" />`
+            ? `<img class="cart-thumb" src="${MEDIA_BASE}${item.image_url}" alt="" loading="lazy" decoding="async" />`
             : `<div class="cart-thumb"></div>`
         }
         <div class="cart-info">
@@ -510,6 +547,38 @@ el("cartBtn").addEventListener("click", openCart);
 el("cartCloseBtn").addEventListener("click", closeCart);
 el("drawerOverlay").addEventListener("click", closeCart);
 
+/* Mobil menyu — main-nav 900px dan tor ekranda yashirilgani uchun kerak */
+
+function openMobileNav() {
+  el("mobileNav").classList.add("open");
+  el("mobileNavOverlay").classList.add("open");
+  el("menuToggle").setAttribute("aria-expanded", "true");
+  lockScroll(true);
+}
+
+function closeMobileNav() {
+  el("mobileNav").classList.remove("open");
+  el("mobileNavOverlay").classList.remove("open");
+  el("menuToggle").setAttribute("aria-expanded", "false");
+  if (!document.querySelector(".modal-overlay.open") && !el("cartDrawer").classList.contains("open")) {
+    lockScroll(false);
+  }
+}
+
+el("menuToggle").addEventListener("click", () => {
+  const isOpen = el("mobileNav").classList.contains("open");
+  isOpen ? closeMobileNav() : openMobileNav();
+});
+el("mobileNavClose").addEventListener("click", closeMobileNav);
+el("mobileNavOverlay").addEventListener("click", closeMobileNav);
+document.querySelectorAll(".mobile-nav a").forEach((a) => {
+  a.addEventListener("click", closeMobileNav);
+  if (a.pathname === window.location.pathname) a.classList.add("active");
+});
+document.querySelectorAll(".main-nav a").forEach((a) => {
+  if (a.pathname === window.location.pathname) a.classList.add("active");
+});
+
 /* Rasmiylashtirish — Telegram faqat shu yerda ko'rsatiladi */
 
 el("checkoutBtn").addEventListener("click", async () => {
@@ -572,6 +641,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   document.querySelectorAll(".modal-overlay.open").forEach((m) => closeModal(m.id));
   closeCart();
+  closeMobileNav();
 });
 
 /* Ishga tushirish */
@@ -586,36 +656,35 @@ async function init() {
     body: JSON.stringify({ device_id: state.deviceId }),
   }).catch(() => {});
 
-  try {
-    const site = await api("/site");
-    state.cartTtlDays = site.cart_ttl_days;
-    el("statCartDays").textContent = site.cart_ttl_days;
-    if (site.site_title) document.title = `${site.site_title} — rasmli oynalar`;
-  } catch (_) {
-    // Sayt sozlamalari yuklanmasa ham katalog ishlayveradi.
+  // Tezlik uchun: sayt sozlamalari, mijoz, kategoriyalar va mahsulotlar
+  // ketma-ket emas, BIR VAQTDA so'raladi — bu birinchi ko'rinishgacha
+  // bo'lgan vaqtni sezilarli qisqartiradi, ayniqsa sekin mobil tarmoqda.
+  const [siteResult, customerResult, categoriesResult] = await Promise.all([
+    api("/site").catch(() => null),
+    api(`/customer/${state.deviceId}`).catch(() => null),
+    api("/categories").catch(() => []),
+    loadProducts(),
+  ]);
+
+  if (siteResult) {
+    state.cartTtlDays = siteResult.cart_ttl_days;
+    el("statCartDays").textContent = siteResult.cart_ttl_days;
+    if (siteResult.site_title) document.title = `${siteResult.site_title} — rasmli oynalar`;
   }
 
   // Sayt birinchi ochilganda ism SO'RALMAYDI: avval mahsulotlar va sayt
   // ko'rsatiladi. Agar shu qurilma avval "Savatga" bosib, ismini kiritgan
   // bo'lsa, sayt uni o'zi taniydi va savatini tiklaydi.
-  try {
-    const customer = await api(`/customer/${state.deviceId}`);
-    applyCustomer(customer);
+  if (customerResult) {
+    applyCustomer(customerResult);
     refreshCart();
-  } catch (_) {
-    // Hali ism kiritilmagan — hech narsa qilinmaydi, gate faqat
-    // "Savatga" tugmasi bosilganda ochiladi.
   }
 
-  try {
-    state.categories = await api("/categories");
-    renderFilters();
-    el("statCategories").textContent = state.categories.length;
-  } catch (_) {
-    renderFilters();
-  }
+  state.categories = categoriesResult || [];
+  renderFilters();
+  if (categoriesResult) el("statCategories").textContent = categoriesResult.length;
 
-  await loadProducts();
+  initScrollReveal();
 }
 
 init();

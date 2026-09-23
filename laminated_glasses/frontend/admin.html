@@ -80,6 +80,11 @@
       <button data-view="news">
         <span>Yangiliklar</span>
       </button>
+      <button data-view="security">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3.5v5c0 4.6-3 8.4-7 9.5-4-1.1-7-4.9-7-9.5v-5L12 3z"/><path d="M9.5 12l1.8 1.8L14.7 10"/></svg>
+        Xavfsizlik
+        <span class="order-badge" id="securityBadge" style="display:none;margin-left:auto;background:#e0483a;color:#fff;border-radius:999px;padding:1px 8px;font-size:0.72rem;font-weight:700;"></span>
+      </button>
       <button data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
         Sozlamalar
@@ -227,6 +232,43 @@
       <div class="field"><label>YouTube URL</label><input id="linkYoutube" type="url" placeholder="https://youtube.com/..." /></div>
       <div class="field"><label>Telefon</label><input id="linkPhone" type="text" /></div><div class="field"><label>Manzil</label><input id="linkAddress" type="text" /></div><div class="field"><label>Email</label><input id="linkEmail" type="email" /></div>
       </div><button class="btn btn-primary" type="submit">Aloqa ma’lumotlarini saqlash</button></form></div>
+    </section>
+
+    <!-- ---- Security / honeypot view ---- -->
+    <section class="view" id="view-security">
+      <div class="dash-topbar">
+        <div>
+          <h2>Xavfsizlik</h2>
+          <p>Honeypot qatlami ushlagan SQL Injection va XSS urinishlari — masalan mahsulot qidiruv maydonida.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshSecurityBtn">Yangilash</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card"><span>Jami urinishlar</span><strong id="secTotal">—</strong></div>
+        <div class="stat-card"><span>SQL Injection</span><strong id="secSqlCount">—</strong></div>
+        <div class="stat-card"><span>XSS</span><strong id="secXssCount">—</strong></div>
+      </div>
+
+      <div class="table-card">
+        <div style="overflow-x:auto;">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Vaqt</th>
+                <th>Turi</th>
+                <th>IP</th>
+                <th>Yo'l</th>
+                <th>Namuna</th>
+                <th>Brauzer</th>
+              </tr>
+            </thead>
+            <tbody id="securityEventsBody">
+              <tr><td colspan="6">Yuklanmoqda...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- ---- Settings view ---- -->

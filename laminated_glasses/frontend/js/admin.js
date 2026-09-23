@@ -75,6 +75,7 @@ function showDashboard() {
   loginScreen.style.display = "none";
   dashShell.classList.add("open");
   loadEverything();
+  startSecurityPolling();
 }
 
 function showLogin() {
@@ -85,6 +86,7 @@ function showLogin() {
 function logout() {
   state.token = null;
   localStorage.removeItem(TOKEN_KEY);
+  stopSecurityPolling();
   showLogin();
 }
 
@@ -774,3 +776,89 @@ document.getElementById('adminNewsList')?.addEventListener('click',async e=>{con
 document.getElementById('sideNav')?.addEventListener('click',e=>{if(e.target.closest('[data-view="news"]')){loadAdminNews();loadSiteLinks();}});
 async function loadSiteLinks(){try{const d=await apiRequest('/admin/site-links');({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}&&Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}).forEach(([k,id])=>document.getElementById(id).value=d[k]||''));}catch(e){showToast(e.message,true);}}
 document.getElementById('siteLinksForm')?.addEventListener('submit',async e=>{e.preventDefault();try{for(const [k,id] of Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}))await apiRequest(`/admin/site-links/${k}`,{method:'PUT',body:JSON.stringify({value:document.getElementById(id).value.trim()})});showToast('Aloqa ma’lumotlari saqlandi');}catch(err){showToast(err.message,true);}});
+
+/* ---------- Xavfsizlik (honeypot: SQLi / XSS urinishlari) ---------- */
+
+state.lastSeenSecurityEventId = Number(localStorage.getItem('lg_last_seen_security_event') || 0);
+state.securityPollTimer = null;
+
+function formatSecurityDate(iso) {
+  try {
+    return new Date(iso).toLocaleString('uz-UZ', { dateStyle: 'short', timeStyle: 'medium' });
+  } catch (e) {
+    return iso;
+  }
+}
+
+function renderSecurityEvents(data) {
+  document.getElementById('secTotal').textContent = data.total;
+  document.getElementById('secSqlCount').textContent = data.sql_injection_count;
+  document.getElementById('secXssCount').textContent = data.xss_count;
+
+  const badge = document.getElementById('securityBadge');
+  if (badge) {
+    badge.textContent = data.total;
+    badge.style.display = data.total > 0 ? 'inline-block' : 'none';
+  }
+
+  const body = document.getElementById('securityEventsBody');
+  if (!body) return;
+  if (!data.events.length) {
+    body.innerHTML = `<tr><td colspan="6">Hozircha hech qanday hujum urinishi qayd etilmagan.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.events
+    .map((ev) => {
+      const kindLabel = ev.kind === 'sql_injection' ? 'SQL Injection' : `XSS${ev.xss_type ? ` — ${escapeHtml(ev.xss_type)}` : ''}`;
+      const kindColor = ev.kind === 'sql_injection' ? '#b3452f' : '#a3651f';
+      return `<tr>
+        <td>${formatSecurityDate(ev.created_at)}</td>
+        <td><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:0.72rem;font-weight:700;color:#fff;background:${kindColor};">${kindLabel}</span></td>
+        <td>${escapeHtml(ev.ip_address)}</td>
+        <td style="max-width:180px;overflow-wrap:anywhere;">${escapeHtml(ev.method)} ${escapeHtml(ev.path)}</td>
+        <td style="max-width:260px;overflow-wrap:anywhere;font-family:monospace;font-size:0.78rem;">${escapeHtml(ev.matched_sample)}</td>
+        <td style="max-width:180px;overflow-wrap:anywhere;font-size:0.75rem;color:var(--navy-soft);">${escapeHtml(ev.user_agent || '—')}</td>
+      </tr>`;
+    })
+    .join('');
+}
+
+async function loadSecurityEvents({ notify = false } = {}) {
+  try {
+    const data = await apiRequest('/admin/security-events?limit=100');
+    renderSecurityEvents(data);
+
+    if (notify && data.events.length) {
+      const newest = data.events[0];
+      if (newest.id > state.lastSeenSecurityEventId) {
+        const isFirstLoad = state.lastSeenSecurityEventId === 0;
+        state.lastSeenSecurityEventId = newest.id;
+        localStorage.setItem('lg_last_seen_security_event', String(newest.id));
+        if (!isFirstLoad) {
+          const label = newest.kind === 'sql_injection' ? 'SQL Injection' : `XSS (${newest.xss_type || ''})`;
+          showToast(`Yangi hujum urinishi ushlandi: ${label} — IP ${newest.ip_address}`, true);
+        }
+      }
+    }
+  } catch (err) {
+    const body = document.getElementById('securityEventsBody');
+    if (body) body.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('refreshSecurityBtn')?.addEventListener('click', () => loadSecurityEvents({ notify: false }));
+document.getElementById('sideNav')?.addEventListener('click', (e) => {
+  if (e.target.closest('[data-view="security"]')) loadSecurityEvents({ notify: false });
+});
+
+function startSecurityPolling() {
+  if (state.securityPollTimer) return;
+  loadSecurityEvents({ notify: true });
+  state.securityPollTimer = setInterval(() => loadSecurityEvents({ notify: true }), 25000);
+}
+function stopSecurityPolling() {
+  if (state.securityPollTimer) {
+    clearInterval(state.securityPollTimer);
+    state.securityPollTimer = null;
+  }
+}

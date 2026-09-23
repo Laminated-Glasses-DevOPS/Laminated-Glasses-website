@@ -37,7 +37,7 @@
 
 <header class="site-header">
   <div class="wrap">
-    <a href="#" class="brand">
+    <a href="/bosh-sahifa" class="brand">
       <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="4" y="4" width="22" height="28" rx="4" transform="rotate(-8 4 4)" fill="#DCEAF5"/>
         <rect x="12" y="6" width="24" height="30" rx="4" fill="url(#g1)"/>
@@ -51,6 +51,9 @@
     <nav class="main-nav"><a href="/bosh-sahifa">Bosh sahifa</a><a href="/mahsulotlar">Mahsulotlar</a><a href="/yangiliklar">Yangiliklar</a><a href="/aloqa">Aloqa</a></nav>
 
     <div class="header-side">
+      <button class="menu-toggle" id="menuToggle" aria-label="Menyuni ochish" aria-expanded="false" aria-controls="mobileNav">
+        <span></span><span></span><span></span>
+      </button>
       <button class="user-chip static" id="userChip" title="Ismingiz" tabindex="-1">
         <span class="avatar" id="userInitial">?</span>
         <span class="name" id="userName">Mehmon</span>
@@ -66,6 +69,18 @@
     </div>
   </div>
 </header>
+
+<div class="mobile-nav-overlay" id="mobileNavOverlay"></div>
+<nav class="mobile-nav" id="mobileNav" aria-label="Mobil menyu">
+  <div class="mobile-nav-head">
+    <span>Menyu</span>
+    <button class="icon-close" id="mobileNavClose" aria-label="Yopish">✕</button>
+  </div>
+  <a href="/bosh-sahifa">Bosh sahifa</a>
+  <a href="/mahsulotlar">Mahsulotlar</a>
+  <a href="/yangiliklar">Yangiliklar</a>
+  <a href="/aloqa">Aloqa</a>
+</nav>
 
 <section class="hero" id="bosh-sahifa">
   <div class="wrap">
@@ -194,21 +209,7 @@
       </div>
     </div>
     <div class="news-grid">
-      <article class="news-card">
-        <span class="news-date">Yangi</span>
-        <h3>Katalogga yangi dizaynlar qo'shildi</h3>
-        <p>Ustki oyna to'plamiga yangi rasmli dizaynlar qo'shildi — katalog bo'limida ko'rib chiqishingiz mumkin.</p>
-      </article>
-      <article class="news-card">
-        <span class="news-date">E'lon</span>
-        <h3>Buyurtma jarayoni soddalashtirildi</h3>
-        <p>Endi saytga kirishda ism so'ralmaydi — faqat "Savatga" tugmasi bosilganda va faqat bir marta so'raladi.</p>
-      </article>
-      <article class="news-card">
-        <span class="news-date">Maslahat</span>
-        <h3>O'lchamni to'g'ri tanlash</h3>
-        <p>Buyurtma berishdan oldin texnikangiz yoki devoringiz o'lchamini aniq o'lchab oling — bu jarayonni tezlashtiradi.</p>
-      </article>
+      <p class="news-loading">Yuklanmoqda…</p>
     </div>
   </div>
 </section>

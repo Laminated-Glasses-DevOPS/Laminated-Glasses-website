@@ -195,6 +195,26 @@ class LoginAttempt(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SecurityEvent(Base):
+    """Honeypot qatlami tutgan SQL Injection / XSS urinishlari jurnali.
+
+    Haqiqiy zaiflik yo'q (ORM parametrlangan so'rovlar, chiqish escape
+    qilinadi) -- bu jadval faqat kim, qachon va qanday usulda urinib
+    ko'rganini kuzatish uchun."""
+
+    __tablename__ = "security_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String(20), nullable=False, index=True)  # "sql_injection" | "xss"
+    xss_type = Column(String(60), nullable=True)
+    ip_address = Column(String(64), index=True, nullable=False)
+    path = Column(String(500), nullable=False)
+    method = Column(String(10), nullable=False, default="GET")
+    matched_sample = Column(String(300), nullable=False, default="")
+    user_agent = Column(String(300), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class NewsPost(Base):
     __tablename__ = "news_posts"
     id = Column(Integer, primary_key=True, index=True)

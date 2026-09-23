@@ -477,3 +477,46 @@ def update_site_link(key: str, payload: LinkPayload, db: Session = Depends(get_d
     if not item: item=models.SiteLink(key=key,value=payload.value); db.add(item)
     else: item.value=payload.value
     db.commit(); return {"key":key,"value":payload.value}
+
+
+@router.get("/security-events")
+def list_security_events(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Honeypot tutgan SQL Injection / XSS urinishlari -- eng oxirgisi birinchi."""
+    limit = max(1, min(limit, 300))
+    events = (
+        db.query(models.SecurityEvent)
+        .order_by(models.SecurityEvent.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    total = db.query(func.count(models.SecurityEvent.id)).scalar() or 0
+    sql_count = (
+        db.query(func.count(models.SecurityEvent.id))
+        .filter(models.SecurityEvent.kind == "sql_injection")
+        .scalar()
+        or 0
+    )
+    xss_count = total - sql_count
+    return {
+        "total": total,
+        "sql_injection_count": sql_count,
+        "xss_count": xss_count,
+        "events": [
+            {
+                "id": e.id,
+                "kind": e.kind,
+                "xss_type": e.xss_type,
+                "ip_address": e.ip_address,
+                "path": e.path,
+                "method": e.method,
+                "matched_sample": e.matched_sample,
+                "user_agent": e.user_agent,
+                "created_at": e.created_at,
+            }
+            for e in events
+        ],
+    }
