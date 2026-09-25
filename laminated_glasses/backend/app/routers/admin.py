@@ -158,9 +158,19 @@ def update_product(
     files = [f for f in images if f and f.filename]
     if image and image.filename: files.insert(0, image)
     if files:
+        # Yangi rasmlar yuklanmoqda -- avval eski rasmlarning ro'yxatini
+        # olib qo'yamiz, so'ng bazani yangilaymiz, va oxirida ESKI rasmlarni
+        # diskdan to'liq o'chiramiz. Shu tufayli eskirgan fayllar diskda
+        # abadiy "yetim" bo'lib qolmaydi -- ular yangilari bilan to'liq
+        # almashtiriladi.
+        old_files = _product_images(product)
         new_files = [utils.save_product_image(f) for f in files]
         product.images_json = json.dumps(new_files)
         product.image_filename = new_files[0]
+        db.commit()
+        db.refresh(product)
+        utils.delete_product_images(old_files)
+        return _to_admin_schema(product)
 
     db.commit()
     db.refresh(product)
@@ -178,9 +188,12 @@ def delete_product(
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi.")
 
     db.query(models.CartItem).filter(models.CartItem.product_id == product.id).delete()
-    utils.delete_product_image(product.image_filename)
+    # Faqat bitta image_filename emas, mahsulotning BUTUN galereyasi
+    # (images_json dagi barcha fayllar) diskdan to'liq o'chiriladi.
+    all_images = _product_images(product)
     db.delete(product)
     db.commit()
+    utils.delete_product_images(all_images)
     return None
 
 

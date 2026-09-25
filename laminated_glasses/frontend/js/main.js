@@ -174,7 +174,14 @@ function mediaHTML(product, index = 1) {
 }
 
 function renderFilters() {
+  // #filters faqat katalog bo'lgan sahifalarda (bosh sahifa, mahsulotlar)
+  // mavjud. Boshqa sahifalarda (masalan konstruktor) bu element umuman
+  // yo'q -- shuning uchun bu yerda to'xtaymiz, aks holda quyidagi
+  // container.innerHTML sinishi butun init() ni (savatni tiklash,
+  // kategoriya sonini ko'rsatish, scroll-reveal animatsiyalarini
+  // ishga tushirish) yarim yo'lda to'xtatib qo'yar edi.
   const container = el("filters");
+  if (!container) return;
   container.innerHTML = "";
 
   const make = (label, value) => {
@@ -194,7 +201,11 @@ function renderFilters() {
 }
 
 function renderProducts() {
+  // #productGrid faqat katalog bo'lgan sahifalarda mavjud (yuqoridagi
+  // renderFilters() dagi izohga qarang -- xuddi shu sababdan bu yerda
+  // ham to'xtaymiz).
   const grid = el("productGrid");
+  if (!grid) return;
 
   if (state.products === null) {
     grid.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
@@ -321,22 +332,31 @@ async function loadProducts() {
     state.products = await api(`/products${query}`);
   } catch (err) {
     state.products = [];
-    el("productGrid").innerHTML = `<p class="state-msg">Mahsulotlarni yuklab bo'lmadi. Aloqani tekshirib, sahifani yangilang.</p>`;
+    const grid = el("productGrid");
+    if (grid) grid.innerHTML = `<p class="state-msg">Mahsulotlarni yuklab bo'lmadi. Aloqani tekshirib, sahifani yangilang.</p>`;
     return;
   }
   renderProducts();
-  el("statProducts").textContent = state.products.length;
+  const statProducts = el("statProducts");
+  if (statProducts) statProducts.textContent = state.products.length;
 }
 
 let searchTimer = null;
-el("searchInput").addEventListener("input", (e) => {
-  const value = e.target.value.trim();
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.search = value;
-    loadProducts();
-  }, 300);
-});
+// "searchInput" faqat mahsulotlar ro'yxati bo'lgan sahifalarda bor
+// (index/products/news/contact). Konstruktor kabi boshqa sahifalarda bu
+// element yo'q -- shartsiz el("searchInput") chaqirilsa, elementi bo'lmagan
+// sahifada xatolik berib, shu qatordan keyingi BUTUN main.js to'xtab qolardi
+// (shu jumladan mobil menyu, savat va boshqa tugmalar ham ishlamay qolardi).
+if (el("searchInput")) {
+  el("searchInput").addEventListener("input", (e) => {
+    const value = e.target.value.trim();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.search = value;
+      loadProducts();
+    }, 300);
+  });
+}
 
 /* Mahsulot oynasi */
 

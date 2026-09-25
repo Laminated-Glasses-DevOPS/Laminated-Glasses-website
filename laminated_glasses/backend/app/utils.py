@@ -53,10 +53,53 @@ def delete_product_image(filename: Optional[str]) -> None:
             pass
 
 
+def delete_product_images(filenames: Optional[List[str]]) -> None:
+    """Bir nechta mahsulot rasmini diskdan o'chiradi (galereya). Mahsulot
+    tahrirlanganda eski rasmlar yangilari bilan almashtirilganda yoki
+    mahsulot o'chirilganda ishlatiladi -- shu tufayli eskirgan fayllar
+    diskda abadiy qolib ketmaydi."""
+    for filename in filenames or []:
+        delete_product_image(filename)
+
+
 def build_image_url(filename: Optional[str]) -> Optional[str]:
     if not filename:
         return None
     return f"/uploads/{filename}"
+
+
+CONSTRUCTOR_PREVIEWS_SUBDIR = "constructor_previews"
+CONSTRUCTOR_PREVIEWS_DIR = config.UPLOADS_DIR / CONSTRUCTOR_PREVIEWS_SUBDIR
+CONSTRUCTOR_PREVIEWS_DIR.mkdir(exist_ok=True)
+
+
+def save_constructor_preview_image(file: UploadFile) -> str:
+    """Konstruktordagi \"Share\" tugmasi orqali yuklangan rasmlarni (asl va
+    tayyor dizayn) mahsulot rasmlaridan ALOHIDA papkaga (uploads/constructor_previews/)
+    saqlaydi. Bu ataylab shunday qilingan: davriy tozalash vazifasi (har 24
+    soatda) faqat shu papkani butunlay tozalaydi, mahsulotlarning joriy
+    rasmlariga esa hech qachon tegmaydi."""
+    suffix = _validate_image(file)
+
+    contents = file.file.read()
+    max_bytes = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if len(contents) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Rasm hajmi {config.MAX_UPLOAD_SIZE_MB}MB dan katta bo'lmasligi kerak.",
+        )
+
+    CONSTRUCTOR_PREVIEWS_DIR.mkdir(exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{suffix}"
+    with open(CONSTRUCTOR_PREVIEWS_DIR / filename, "wb") as f:
+        f.write(contents)
+    return filename
+
+
+def build_constructor_preview_url(filename: Optional[str]) -> Optional[str]:
+    if not filename:
+        return None
+    return f"/uploads/{CONSTRUCTOR_PREVIEWS_SUBDIR}/{filename}"
 
 
 def purge_expired_cart_items(db: Session, customer_id: Optional[int] = None) -> int:

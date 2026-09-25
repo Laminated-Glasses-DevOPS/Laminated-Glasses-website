@@ -412,13 +412,17 @@ async def share_constructor_preview(
     xabar tuziladi. Haqiqiy jo'natishni (checkout oqimidagi kabi) mijozning
     o'zi Telegram ilovasida \"Yuborish\"ni bosib amalga oshiradi -- bu
     yerda bot orqali avtomatik xabar yuborilmaydi."""
-    original_filename = utils.save_product_image(original)
-    final_filename = utils.save_product_image(final)
+    # Bu rasmlar mahsulot rasmlaridan ALOHIDA papkaga saqlanadi (constructor
+    # preview) -- shu tufayli har 24 soatlik avtomatik tozalash faqat shu
+    # vaqtinchalik fayllarni o'chiradi, mahsulotlarning joriy rasmlariga
+    # hech qachon tegmaydi.
+    original_filename = utils.save_constructor_preview_image(original)
+    final_filename = utils.save_constructor_preview_image(final)
 
     settings = _settings(db)
     base = str(request.base_url).rstrip("/")
-    original_url = f"{base}{utils.build_image_url(original_filename)}"
-    final_url = f"{base}{utils.build_image_url(final_filename)}"
+    original_url = f"{base}{utils.build_constructor_preview_url(original_filename)}"
+    final_url = f"{base}{utils.build_constructor_preview_url(final_filename)}"
 
     lines = ["Assalomu alaykum! Konstruktorda tayyorlagan dizaynimni yubormoqchiman."]
     if size_label:

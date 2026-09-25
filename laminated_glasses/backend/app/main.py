@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import config, honeypot_state, models, security, shield, utils
+from . import cleanup, config, honeypot_state, models, security, shield, utils
 from .database import Base, SessionLocal, engine
 from .routers import admin, public
 
@@ -204,6 +204,22 @@ def seed_default_data() -> None:
         utils.purge_expired_cart_items(db)
     finally:
         db.close()
+
+
+@app.on_event("startup")
+async def start_periodic_cleanup() -> None:
+    """Davriy fon tozalash vazifalarini ishga tushiradi: havfsizlik jurnali
+    va konstruktor preview rasmlari har 24 soatda, yangiliklar va
+    buyurtmalar har 48 soatda to'liq tozalanadi (batafsili: app/cleanup.py).
+    Mahsulotlar, ularning joriy rasmlari, mijozlar va konstruktor
+    o'lchamlari bunga tegilmaydi."""
+    app.state.cleanup_tasks = cleanup.start_background_cleanup_tasks()
+
+
+@app.on_event("shutdown")
+async def stop_periodic_cleanup() -> None:
+    for task in getattr(app.state, "cleanup_tasks", []):
+        task.cancel()
 
 
 app.mount("/uploads", StaticFiles(directory=str(config.UPLOADS_DIR)), name="uploads")

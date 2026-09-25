@@ -53,6 +53,7 @@
     perspective:1200px;transition:aspect-ratio .2s var(--ease);
   }
   .constructor-preview-placeholder{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--navy-soft);font-size:0.85rem;padding:16px;text-align:center;max-width:280px;}
+  .constructor-preview-placeholder[hidden]{display:none;}
   .constructor-preview-placeholder svg{width:34px;height:34px;color:var(--sky);}
   .constructor-artwork{position:relative;display:flex;align-items:center;transform-origin:center;transform-style:preserve-3d;transition:transform 0.6s cubic-bezier(0.16,1,0.3,1);}
   .constructor-pane{position:relative;overflow:hidden;flex:none;background:var(--ice-2);box-shadow:0 16px 32px rgba(6,38,61,0.20),0 4px 9px rgba(6,38,61,0.12),inset 0 0 0 1px rgba(255,255,255,0.5);transition:box-shadow .3s ease;}
@@ -70,6 +71,12 @@
   @media (max-width:860px){.constructor-stage-wrap{min-height:240px;padding:16px;}}
   @media (max-width:520px){.constructor-pane-label{font-size:8px;padding:2px 5px;}}
   @media (prefers-reduced-motion:reduce){.constructor-artwork,.constructor-pane-glare{animation:none !important;transition:none !important;}}
+  .constructor-zoom-btn{position:absolute;right:14px;bottom:14px;z-index:4;width:38px;height:38px;border-radius:50%;border:1px solid var(--line-strong);background:rgba(255,255,255,0.92);color:var(--navy);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px rgba(6,38,61,0.16);}
+  .constructor-zoom-btn[hidden]{display:none;}
+  .constructor-zoom-btn svg{width:18px;height:18px;}
+  .constructor-zoom-btn:hover{background:var(--white);}
+  .constructor-artwork{cursor:zoom-in;}
+  .constructor-zoom-modal{max-width:min(92vw,760px);}
 </style>
 </head>
 <body>
@@ -210,14 +217,22 @@
             <span>O'lchamni tanlang va rasm yuklang — panellarga bo'lib shu yerda ko'rsatamiz</span>
           </div>
           <div class="constructor-artwork" id="constructorArtwork" hidden></div>
+          <button type="button" class="constructor-zoom-btn" id="constructorZoomBtn" aria-label="Kattalashtirib ko'rish" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+          </button>
         </div>
         <div class="constructor-preview-info">
           <span id="constructorPreviewSize">O'lcham tanlanmagan</span>
           <strong id="constructorPreviewPrice"></strong>
         </div>
-        <button type="button" class="btn btn-accent btn-block" id="constructorShareBtn" style="margin-top:12px;" disabled>
-          Telegramga yuborish
-        </button>
+        <div class="constructor-actions-row" style="display:flex; gap:8px; margin-top:12px;">
+          <button type="button" class="btn btn-ghost" id="constructorDownloadBtn" style="flex:1;" disabled>
+            Yuklab olish
+          </button>
+          <button type="button" class="btn btn-accent" id="constructorShareBtn" style="flex:2;" disabled>
+            Telegramga yuborish
+          </button>
+        </div>
         <div class="constructor-error" id="constructorShareError"></div>
       </div>
     </div>
@@ -465,6 +480,14 @@
   </div>
 </div>
 
+<!-- Konstruktordagi tayyor dizaynni kattalashtirib ko'rish -->
+<div class="modal-overlay" id="constructorZoomModal">
+  <div class="modal constructor-zoom-modal">
+    <button class="modal-close" id="constructorZoomClose" aria-label="Yopish">✕</button>
+    <img id="constructorZoomImg" alt="Tayyor dizayn" style="max-width:100%; max-height:80vh; display:block; margin:0 auto; border-radius:8px;">
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="/js/main.js"></script>
@@ -544,7 +567,12 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('constructorStatSize').textContent = `${round(totalW)} × ${round(maxH)} sm`;
 
     const shareBtn = $('constructorShareBtn');
-    if(shareBtn) shareBtn.disabled = !(state.imageSrc && state.imageObj && panes.length);
+    const downloadBtn = $('constructorDownloadBtn');
+    const zoomBtn = $('constructorZoomBtn');
+    const ready = !!(state.imageSrc && state.imageObj && panes.length);
+    if(shareBtn) shareBtn.disabled = !ready;
+    if(downloadBtn) downloadBtn.disabled = !ready;
+    if(zoomBtn) zoomBtn.hidden = !ready;
 
     if(!state.imageSrc || !panes.length || !state.imageObj){
       artwork.hidden = true;
@@ -565,6 +593,17 @@ document.addEventListener("DOMContentLoaded",()=>{
     artwork.style.width = `${totalW * scale}px`;
     artwork.style.height = `${maxH * scale}px`;
 
+    // Rasm balandligi doim UMUMIY balandlik (maxH)ga nisbatan bitta marta
+    // hisoblanadi, har bir panel ichida emas -- aks holda panellarning
+    // bo'yi har xil bo'lganda (admin har biriga alohida o'lcham bergan
+    // holatlarda) rasm har panelda boshqa-boshqa balandlikda markazlashib,
+    // rasm yuklanganda dizayn panellar orasida "siljib" ko'rinar edi.
+    const imageScale = Math.max((totalW*scale)/state.imageObj.naturalWidth, (maxH*scale)/state.imageObj.naturalHeight);
+    const renderedW = state.imageObj.naturalWidth * imageScale;
+    const renderedH = state.imageObj.naturalHeight * imageScale;
+    const offsetX = ((totalW*scale) - renderedW) / 2;
+    const offsetY = ((maxH*scale) - renderedH) / 2;
+
     let xCm = 0;
     panes.forEach((p) => {
       const pane = document.createElement('div');
@@ -575,12 +614,6 @@ document.addEventListener("DOMContentLoaded",()=>{
       const img = document.createElement('img');
       img.src = state.imageSrc;
       img.alt = '';
-
-      const imageScale = Math.max((totalW*scale)/state.imageObj.naturalWidth, (maxH*scale)/state.imageObj.naturalHeight);
-      const renderedW = state.imageObj.naturalWidth * imageScale;
-      const renderedH = state.imageObj.naturalHeight * imageScale;
-      const offsetX = ((totalW*scale) - renderedW) / 2;
-      const offsetY = ((p.h*scale) - renderedH) / 2;
 
       img.style.width = `${renderedW}px`;
       img.style.height = `${renderedH}px`;
@@ -693,6 +726,51 @@ document.addEventListener("DOMContentLoaded",()=>{
     const offsetX = (canvas.width - renderedW) / 2;
     const offsetY = (canvas.height - renderedH) / 2;
     ctx.drawImage(state.imageObj, offsetX, offsetY, renderedW, renderedH);
+
+    // Panellar orasidagi ramka (mullion) chiziqlari -- shular bo'lmasa
+    // "tayyor dizayn" rasmi asl yuklangan rasmdan hech farq qilmay,
+    // xuddi o'sha rasm bo'lib qolar edi. Har bir panel oralig'iga oq
+    // ramka chizib, bir nechta alohida oynaga bo'lingan ko'rinish beramiz
+    // -- sahifadagi jonli ko'rinishdagi (.constructor-pane) chegaralarga
+    // mos.
+    const frameW = Math.max(3, Math.round(PX_PER_CM * 0.6));
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = 'rgba(15,23,42,0.18)';
+    ctx.lineWidth = 1;
+    let xCm = 0;
+    panes.forEach((p, i) => {
+      const xPx = Math.round(xCm * PX_PER_CM);
+      const wPx = Math.round(p.w * PX_PER_CM);
+
+      // Jonli ko'rinishda (renderStage) har bir panel o'zining bo'yi
+      // (p.h) bilan chiziladi va UMUMIY qatordagi eng baland panelga
+      // (maxH) nisbatan VERTIKAL MARKAZDA turadi -- bo'yi kichikroq
+      // panellar rasmning faqat markaziy chizig'ini ko'rsatadi, ustki
+      // va pastki qismi esa panel ichida umuman ko'rinmaydi (chunki u
+      // yerda oyna yo'q). Yuklab olinadigan/Telegramga yuboriladigan
+      // yakuniy rasm oldin BUTUN canvasni (maxH balandlikda) bir xilda
+      // to'ldirib chizardi, shu sababli bo'yi kichikroq panellar ham
+      // eng baland panel kabi TO'LIQ balandlikda chiqib, ko'rinishdagi
+      // (preview) rasmdan farq qilardi. Shu farqni yo'qotish uchun har
+      // bir panel ustunining o'zi egallamaydigan (yuqori va pastki)
+      // qismini xuddi shu oq ramka rangi bilan "qirqib" tashlaymiz --
+      // natija ko'rinishdagi rasm bilan bir xil bo'ladi.
+      const paneHPx = Math.round(p.h * PX_PER_CM);
+      const paneYPx = Math.round((canvas.height - paneHPx) / 2);
+      if(paneYPx > 0){
+        ctx.fillRect(xPx, 0, wPx, paneYPx);
+        ctx.fillRect(xPx, paneYPx + paneHPx, wPx, canvas.height - paneYPx - paneHPx);
+      }
+
+      // Tashqi ramka (butun dizayn atrofida)
+      if(i === 0) ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+      // Panellar orasidagi ichki ajratuvchi ustun
+      if(i > 0){
+        ctx.fillRect(xPx - frameW/2, 0, frameW, canvas.height);
+      }
+      xCm += p.w;
+    });
+
     return await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
   }
 
@@ -742,6 +820,53 @@ document.addEventListener("DOMContentLoaded",()=>{
       btn.textContent = originalText;
       renderStage();
     }
+  });
+
+  /* Tayyor dizaynni qurilmaga yuklab olish */
+  $('constructorDownloadBtn').addEventListener('click', async () => {
+    const btn = $('constructorDownloadBtn');
+    const errBox = $('constructorShareError');
+    errBox.textContent = '';
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Tayyorlanmoqda...';
+    try{
+      const blob = await buildFinalImageBlob();
+      if(!blob) throw new Error("Tayyor rasmni hosil qilib bo'lmadi.");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dizayn-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }catch(err){
+      errBox.textContent = err.message || "Yuklab olishda xatolik yuz berdi.";
+    }finally{
+      btn.textContent = originalText;
+      renderStage();
+    }
+  });
+
+  /* Tayyor dizaynni bosib kattalashtirib ko'rish (zoom) */
+  let zoomObjectUrl = null;
+  async function openZoom(){
+    if(!state.imageSrc || !state.imageObj || !getPanes().length) return;
+    const img = $('constructorZoomImg');
+    if(zoomObjectUrl){ URL.revokeObjectURL(zoomObjectUrl); zoomObjectUrl = null; }
+    try{
+      const blob = await buildFinalImageBlob();
+      img.src = blob ? (zoomObjectUrl = URL.createObjectURL(blob)) : state.imageSrc;
+    }catch(e){
+      img.src = state.imageSrc;
+    }
+    if(typeof openModal === 'function') openModal('constructorZoomModal');
+  }
+  $('constructorArtwork').addEventListener('click', openZoom);
+  $('constructorZoomBtn').addEventListener('click', (e) => { e.stopPropagation(); openZoom(); });
+  $('constructorZoomClose').addEventListener('click', () => {
+    if(typeof closeModal === 'function') closeModal('constructorZoomModal');
   });
 
   window.addEventListener('resize', renderStage);
