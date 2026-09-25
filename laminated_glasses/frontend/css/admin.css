@@ -453,6 +453,46 @@ table.admin-table tbody tr:hover {
   margin-top: 6px;
 }
 
+@media (max-width: 640px) {
+  .admin-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .admin-modal {
+    max-width: none;
+    width: 100%;
+    border-radius: 22px 22px 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 14px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+    animation: sheetUp 0.24s var(--ease);
+  }
+
+  .admin-modal::before {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--line);
+    margin: 0 auto 16px;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions .btn {
+    width: 100%;
+  }
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 /* ---------- Settings forms ---------- */
 
 .settings-grid {
@@ -555,31 +595,612 @@ table.admin-table tbody tr:hover {
   line-height: 1;
 }
 
+/* ---------- Mobil sarlavha paneli (faqat kichik ekranlarda) ---------- */
+
+.mobile-topbar {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: var(--navy);
+  color: var(--white);
+  position: sticky;
+  top: 0;
+  z-index: 120;
+  box-shadow: 0 2px 14px rgba(5, 25, 45, 0.18);
+}
+
+.mobile-menu-btn,
+.mobile-logout-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--white);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.18s var(--ease);
+}
+
+.mobile-menu-btn:active,
+.mobile-logout-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.mobile-menu-btn svg,
+.mobile-logout-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-topbar-brand .brand-mark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.mobile-topbar-brand span {
+  font-family: var(--font-head);
+  font-size: 1.02rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+body.no-scroll {
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
+  .mobile-topbar {
+    display: flex;
+  }
+
   .dash-shell.open {
-    grid-template-columns: 1fr;
+    display: block;
   }
+
   .sidebar {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(84vw, 300px);
+    z-index: 160;
+    transform: translateX(-100%);
+    transition: transform 0.28s var(--ease);
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 8px 0 30px rgba(5, 25, 45, 0.3);
   }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar .brand {
+    display: none;
+  }
+
   .side-nav {
-    flex-direction: row;
+    flex-direction: column;
+    margin-top: 4px;
   }
+
+  .side-nav button {
+    padding: 13px 14px;
+    font-size: 0.95rem;
+  }
+
   .sidebar-foot {
-    margin-top: 0;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
   }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 20, 35, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s var(--ease);
+    z-index: 150;
+  }
+
+  .sidebar-backdrop.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .dash-main {
-    padding: 22px 18px 50px;
+    padding: 18px 14px calc(40px + env(safe-area-inset-bottom, 0px));
   }
+
+  .dash-topbar {
+    gap: 12px;
+  }
+
+  .dash-topbar h2 {
+    font-size: 1.2rem;
+  }
+
+  .dash-topbar .btn {
+    width: 100%;
+  }
+
   .form-row,
   .settings-grid {
     grid-template-columns: 1fr;
   }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 14px 14px;
+  }
+
+  .stat-card strong {
+    font-size: 1.2rem;
+  }
 }
 
-/* Buyurtmalar bo'limi */
+/* ---------- Jadvallar: telefonda kartochka ko'rinishi ---------- */
+
+@media (max-width: 720px) {
+  table.admin-table thead {
+    display: none;
+  }
+
+  table.admin-table,
+  table.admin-table tbody,
+  table.admin-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  table.admin-table tr {
+    border-bottom: 8px solid var(--ice);
+    padding: 6px 0;
+  }
+
+  table.admin-table tr.empty-row {
+    border-bottom: none;
+  }
+
+  table.admin-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    white-space: normal;
+    text-align: right;
+    border-bottom: 1px dashed var(--line);
+    padding: 10px 18px;
+  }
+
+  table.admin-table tr:last-child td:last-child,
+  table.admin-table td:last-of-type {
+    border-bottom: none;
+  }
+
+  table.admin-table td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.74rem;
+    color: var(--navy-soft);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  table.admin-table td:not([data-label]),
+  table.admin-table td[data-label=""] {
+    justify-content: center;
+  }
+
+  table.admin-table .row-actions {
+    justify-content: flex-end;
+  }
+
+  .empty-row td {
+    display: block;
+    text-align: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .table-toolbar input {
+    max-width: none !important;
+    width: 100%;
+  }
+}
+
+/* ---------- Telefonda qulayroq bosish maydonlari ---------- */
+
+@media (max-width: 640px) {
+  .icon-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .row-actions {
+    gap: 10px;
+  }
+
+  .btn-sm {
+    padding: 10px 16px;
+    min-height: 38px;
+  }
+
+  .order-actions .btn,
+  .order-actions select {
+    min-height: 40px;
+  }
+
+  .order-actions input {
+    min-height: 40px;
+  }
+
+  .toast {
+    left: 14px;
+    right: 14px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .order-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .order-actions input,
+  .order-actions .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .order-top {
+    flex-direction: column;
+  }
+}
+
+/* ---------- Xavfsizlik: IP bo'yicha guruhlangan hujum bloklari ---------- */
+
+.ip-attack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ip-block {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+
+.ip-block.is-sql {
+  border-left-color: #b3452f;
+}
+
+.ip-block.is-xss {
+  border-left-color: #a3651f;
+}
+
+.ip-block.open {
+  box-shadow: var(--shadow-soft);
+}
+
+.ip-block-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 18px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s var(--ease);
+}
+
+.ip-block-header:hover {
+  background: var(--ice);
+}
+
+.ip-block-header:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: -2px;
+}
+
+.ip-block-chevron {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: var(--navy-soft);
+  transition: transform 0.22s var(--ease);
+}
+
+.ip-block.open .ip-block-chevron {
+  transform: rotate(90deg);
+  color: var(--sky-deep);
+}
+
+.ip-block-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ip-block-line1,
+.ip-block-line2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.kind-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.ip-block-ip {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-weight: 700;
+  color: var(--navy);
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+}
+
+.ip-block-count {
+  background: var(--ice);
+  color: var(--navy-soft);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ip-block-msg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #1c8a4f;
+  box-shadow: 0 0 0 3px rgba(28, 138, 79, 0.16);
+  flex-shrink: 0;
+}
+
+.ip-block-time {
+  font-size: 0.78rem;
+  color: var(--navy-soft);
+}
+
+.ip-block-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ip-block-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ip-block-status.online {
+  color: #1c8a4f;
+}
+
+.ip-block-status.online i {
+  background: #1c8a4f;
+  box-shadow: 0 0 6px 1px rgba(28, 138, 79, 0.55);
+  animation: ipStatusPulse 1.7s ease-in-out infinite;
+}
+
+.ip-block-status.offline {
+  color: var(--navy-soft);
+}
+
+.ip-block-status.offline i {
+  background: #b7c0c8;
+}
+
+@keyframes ipStatusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.ip-block-arrow {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--navy);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), color 0.18s var(--ease), background 0.18s var(--ease), transform 0.12s var(--ease);
+}
+
+.ip-block-arrow svg {
+  width: 17px;
+  height: 17px;
+}
+
+.ip-block-arrow:hover {
+  border-color: var(--sky);
+  color: var(--sky-deep);
+  background: var(--ice);
+}
+
+.ip-block-arrow:active {
+  transform: scale(0.94);
+}
+
+.ip-block-detail {
+  border-top: 1px solid var(--line);
+  padding: 16px 18px 18px;
+  background: var(--ice);
+}
+
+.ip-block-detail:not([hidden]) {
+  animation: ipDetailFade 0.2s ease-out;
+}
+
+@keyframes ipDetailFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ip-msg-status {
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  margin-bottom: 14px;
+}
+
+.ip-msg-status.empty {
+  border: 1px dashed var(--line-strong);
+  color: var(--navy-soft);
+  background: var(--white);
+}
+
+.ip-msg-status.active {
+  border: 1px solid var(--sky);
+  background: #eaf4fb;
+}
+
+.ip-msg-text {
+  color: var(--navy);
+  font-weight: 600;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.ip-msg-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--navy-soft);
+  margin-bottom: 10px;
+}
+
+.ip-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ip-event-row {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.ip-event-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.ip-event-time {
+  font-size: 0.74rem;
+  color: var(--navy-soft);
+}
+
+.ip-event-path {
+  font-size: 0.82rem;
+  color: var(--navy);
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+
+.ip-event-sample {
+  display: inline-block;
+  max-width: 100%;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.76rem;
+  color: #a3651f;
+  background: var(--ice);
+  padding: 4px 8px;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  margin-bottom: 5px;
+}
+
+.ip-event-ua {
+  font-size: 0.72rem;
+  color: var(--navy-soft);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .ip-block-header {
+    padding: 13px 14px;
+    gap: 11px;
+  }
+
+  .ip-block-detail {
+    padding: 14px 14px 16px;
+  }
+
+  .ip-block-ip {
+    font-size: 0.88rem;
+  }
+
+  .ip-block-line1,
+  .ip-block-line2 {
+    gap: 7px;
+  }
+
+  .ip-msg-meta {
+    flex-direction: column;
+    gap: 3px;
+  }
+}
 
 .order-filters {
   display: flex;

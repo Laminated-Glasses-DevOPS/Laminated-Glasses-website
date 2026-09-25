@@ -17,7 +17,7 @@ from fastapi import (
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import config, models, schemas, security, utils
+from .. import config, honeypot_state, models, schemas, security, utils
 from ..database import get_db
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -479,6 +479,92 @@ def update_site_link(key: str, payload: LinkPayload, db: Session = Depends(get_d
     db.commit(); return {"key":key,"value":payload.value}
 
 
+@router.get("/constructor/sizes", response_model=List[schemas.ConstructorSizeAdminOut])
+def list_constructor_sizes(
+    db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)
+):
+    """Konstruktor uchun barcha o'lchamlar (faol va o'chirilganlari ham)."""
+    return (
+        db.query(models.ConstructorSize)
+        .order_by(models.ConstructorSize.sort_order.asc(), models.ConstructorSize.created_at.asc())
+        .all()
+    )
+
+
+def _panes_to_columns(panes: list) -> dict:
+    """Har bir panelning alohida eni/bo'yi ro'yxatini (`PaneSize` obyektlari
+    yoki dict) `ConstructorSize` ustunlariga aylantiradi: pane_count,
+    orqaga moslik uchun umumiy width_cm (yig'indi) / height_cm (maksimum),
+    va panellarning o'zini saqlaydigan panes_json."""
+    normalized = [
+        {"width_cm": p.width_cm, "height_cm": p.height_cm}
+        if hasattr(p, "width_cm")
+        else {"width_cm": p["width_cm"], "height_cm": p["height_cm"]}
+        for p in panes
+    ]
+    return {
+        "pane_count": len(normalized),
+        "width_cm": sum(p["width_cm"] for p in normalized),
+        "height_cm": max(p["height_cm"] for p in normalized),
+        "panes_json": json.dumps(normalized),
+    }
+
+
+@router.post("/constructor/sizes", response_model=schemas.ConstructorSizeAdminOut, status_code=201)
+def create_constructor_size(
+    payload: schemas.ConstructorSizeCreate,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    data = payload.model_dump(exclude={"panes"})
+    data.update(_panes_to_columns(payload.panes))
+    size = models.ConstructorSize(**data)
+    size.is_active = 1 if payload.is_active else 0
+    db.add(size)
+    db.commit()
+    db.refresh(size)
+    return size
+
+
+@router.put("/constructor/sizes/{size_id}", response_model=schemas.ConstructorSizeAdminOut)
+def update_constructor_size(
+    size_id: int,
+    payload: schemas.ConstructorSizeUpdate,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    size = db.query(models.ConstructorSize).filter(models.ConstructorSize.id == size_id).first()
+    if size is None:
+        raise HTTPException(status_code=404, detail="O'lcham topilmadi.")
+
+    data = payload.model_dump(exclude_unset=True, exclude={"panes"})
+    if "is_active" in data:
+        size.is_active = 1 if data.pop("is_active") else 0
+    for key, value in data.items():
+        setattr(size, key, value)
+    if payload.panes is not None:
+        for key, value in _panes_to_columns(payload.panes).items():
+            setattr(size, key, value)
+
+    db.commit()
+    db.refresh(size)
+    return size
+
+
+@router.delete("/constructor/sizes/{size_id}", status_code=204)
+def delete_constructor_size(
+    size_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    size = db.query(models.ConstructorSize).filter(models.ConstructorSize.id == size_id).first()
+    if size is None:
+        raise HTTPException(status_code=404, detail="O'lcham topilmadi.")
+    db.delete(size)
+    db.commit()
+    return None
+
+
 @router.get("/security-events")
 def list_security_events(
     limit: int = 100,
@@ -501,10 +587,29 @@ def list_security_events(
         or 0
     )
     xss_count = total - sql_count
+
+    # Har bir IP uchun HAQIQIY real-vaqt Onlayn/Oflayn holati -- oxirgi
+    # hujum vaqtiga emas, honeypot sahifasidan kelayotgan heartbeatga
+    # asoslangan (qarang: app/honeypot_state.py).
+    ip_addresses = {e.ip_address for e in events}
+    heartbeats: dict = {}
+    if ip_addresses:
+        rows = (
+            db.query(models.HoneypotHeartbeat)
+            .filter(models.HoneypotHeartbeat.ip_address.in_(ip_addresses))
+            .all()
+        )
+        for hb in rows:
+            heartbeats[hb.ip_address] = {
+                "online": honeypot_state.is_ip_online(hb),
+                "last_seen_at": hb.last_seen_at.isoformat() + "Z",
+            }
+
     return {
         "total": total,
         "sql_injection_count": sql_count,
         "xss_count": xss_count,
+        "heartbeats": heartbeats,
         "events": [
             {
                 "id": e.id,
@@ -515,8 +620,85 @@ def list_security_events(
                 "method": e.method,
                 "matched_sample": e.matched_sample,
                 "user_agent": e.user_agent,
-                "created_at": e.created_at,
+                "created_at": e.created_at.isoformat() + "Z",
             }
             for e in events
         ],
     }
+
+
+@router.delete("/security-events")
+def clear_security_events(
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Xavfsizlik jurnalini (SQLi/XSS urinishlari tarixini) butunlay
+    tozalaydi. Faol honeypot xabarlariga (HoneypotMessage) tegilmaydi --
+    ular alohida boshqariladi."""
+    deleted = db.query(models.SecurityEvent).delete()
+    db.commit()
+    return {"deleted": deleted}
+
+
+@router.get("/security/messages", response_model=List[schemas.HoneypotMessageOut])
+def list_honeypot_messages(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Admin turli IP larga yozgan honeypot xabarlari ro'yxati."""
+    query = db.query(models.HoneypotMessage)
+    if not include_inactive:
+        query = query.filter(models.HoneypotMessage.is_active == 1)
+    return query.order_by(models.HoneypotMessage.created_at.desc()).limit(200).all()
+
+
+@router.post("/security/messages", response_model=schemas.HoneypotMessageOut)
+def send_honeypot_message(
+    payload: schemas.HoneypotMessageCreate,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Tanlangan IP manziliga shaxsiy honeypot xabari yozadi.
+
+    Shu IP uchun avval yuborilgan faol xabarlar avtomatik bekor qilinadi
+    (is_active=0) -- bir vaqtning o'zida bitta IP uchun faqat bitta faol
+    xabar bo'ladi, shunday qilib hujumchi honeypot sahifasiga qaytadan
+    tushganda eng oxirgi yozilgan xabarni ko'radi."""
+    db.query(models.HoneypotMessage).filter(
+        models.HoneypotMessage.ip_address == payload.ip_address,
+        models.HoneypotMessage.is_active == 1,
+    ).update({"is_active": 0})
+
+    telegram_username = payload.telegram_username
+    if not telegram_username:
+        settings = db.query(models.SiteSettings).first()
+        if settings and settings.telegram_username:
+            telegram_username = settings.telegram_username.lstrip("@")
+
+    msg = models.HoneypotMessage(
+        ip_address=payload.ip_address,
+        message=payload.message,
+        telegram_username=telegram_username,
+        is_active=1,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+@router.delete("/security/messages/{message_id}")
+def cancel_honeypot_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Yozilgan xabarni bekor qiladi -- shu daqiqadan boshlab hujumchi
+    yana honeypotga tushsa, standart kinoyali matnni ko'radi."""
+    msg = db.get(models.HoneypotMessage, message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Xabar topilmadi.")
+    msg.is_active = 0
+    db.commit()
+    return {"ok": True}

@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import config, models, schemas, utils
+from .. import config, honeypot_state, models, schemas, security, utils
 from ..database import get_db
 
 router = APIRouter(tags=["Public"])
@@ -382,3 +382,95 @@ def public_news(db: Session = Depends(get_db)):
 @router.get("/site-links")
 def public_site_links(db: Session = Depends(get_db)):
     return {x.key:x.value for x in db.query(models.SiteLink).all() if x.value}
+
+
+@router.get("/constructor/sizes", response_model=List[schemas.ConstructorSizeOut])
+def public_constructor_sizes(db: Session = Depends(get_db)):
+    """Konstruktor sahifasida mijozga ko'rsatiladigan, admin yoqqan
+    o'lchamlar ro'yxati (o'chirilganlari bu yerda chiqmaydi)."""
+    return (
+        db.query(models.ConstructorSize)
+        .filter(models.ConstructorSize.is_active == 1)
+        .order_by(models.ConstructorSize.sort_order.asc(), models.ConstructorSize.created_at.asc())
+        .all()
+    )
+
+
+@router.post("/constructor/share", response_model=schemas.ConstructorShareOut)
+async def share_constructor_preview(
+    request: Request,
+    original: UploadFile = File(...),
+    final: UploadFile = File(...),
+    size_label: Optional[str] = Form(None),
+    pane_count: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Konstruktordagi \"Share\" tugmasi: mijoz yuklagan asl rasm va
+    oynalarga bo'lingan holda ko'rinadigan tayyor dizayn diskka saqlanadi,
+    so'ng admin sozlamalarda oldindan belgilangan Telegram akkauntiga
+    (`SiteSettings.telegram_username`) shu ikki rasm havolasi bilan tayyor
+    xabar tuziladi. Haqiqiy jo'natishni (checkout oqimidagi kabi) mijozning
+    o'zi Telegram ilovasida \"Yuborish\"ni bosib amalga oshiradi -- bu
+    yerda bot orqali avtomatik xabar yuborilmaydi."""
+    original_filename = utils.save_product_image(original)
+    final_filename = utils.save_product_image(final)
+
+    settings = _settings(db)
+    base = str(request.base_url).rstrip("/")
+    original_url = f"{base}{utils.build_image_url(original_filename)}"
+    final_url = f"{base}{utils.build_image_url(final_filename)}"
+
+    lines = ["Assalomu alaykum! Konstruktorda tayyorlagan dizaynimni yubormoqchiman."]
+    if size_label:
+        size_line = f"O'lcham: {size_label}"
+        if pane_count:
+            size_line += f" ({pane_count} oyna)"
+        lines.append(size_line)
+    lines += [
+        "",
+        f"Asl rasm: {original_url}",
+        f"Tayyor dizayn (oynalarga bo'lingan): {final_url}",
+    ]
+    message_text = "\n".join(lines)
+
+    return schemas.ConstructorShareOut(
+        telegram_username=settings.telegram_username,
+        telegram_url=utils.telegram_url(settings.telegram_username, message_text),
+        original_image_url=original_url,
+        final_image_url=final_url,
+        message_text=message_text,
+    )
+
+
+# ---------- Honeypot: real-vaqt heartbeat + avtomatik yangilanish ----------
+#
+# Bu ikki endpoint faqat ochiq turgan honeypot 400-sahifasining o'z JS kodi
+# tomonidan chaqiriladi (haqiqiy mijozlar hech qachon bunga tegmaydi).
+# Ular orqali: (1) admin panelda IP haqiqiy real-vaqt Onlayn/Oflayn holati
+# ko'rsatiladi, (2) admin yozgan/bekor qilgan shaxsiy xabar honeypot
+# sahifasida sahifani qayta yuklamasdan avtomatik ko'rinadi.
+
+@router.post("/security/pulse")
+def honeypot_pulse(request: Request, db: Session = Depends(get_db)):
+    """Honeypot sahifasi ochiq turgan vaqtda muntazam yuboriladigan
+    "men hali ham ochiqman" signali. Javobida joriy faol shaxsiy xabar
+    (bo'lsa) qaytariladi -- sahifa buni o'zi bilan solishtirib, farq
+    bo'lsa avtomatik yangilanadi."""
+    ip_address = security._get_client_ip(request)
+    honeypot_state.record_heartbeat(db, ip_address, is_open=True)
+    custom = honeypot_state.active_honeypot_message(db, ip_address)
+    if custom is None:
+        return {"message": None, "reply_url": None}
+    reply_url = utils.telegram_url(custom.telegram_username) if custom.telegram_username else None
+    return {"message": custom.message, "reply_url": reply_url}
+
+
+@router.post("/security/offline")
+def honeypot_offline(request: Request, db: Session = Depends(get_db)):
+    """Honeypot sahifasi yopilayotganda (tab yopish, orqaga qaytish va h.k.)
+    `navigator.sendBeacon` orqali yuboriladigan signal -- IP darhol
+    "Oflayn" deb belgilanadi, heartbeat oynasi tugashini kutish shart
+    emas."""
+    ip_address = security._get_client_ip(request)
+    honeypot_state.record_heartbeat(db, ip_address, is_open=False)
+    return {"ok": True}

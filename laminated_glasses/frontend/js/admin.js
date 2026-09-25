@@ -91,6 +91,27 @@ function logout() {
 }
 
 document.getElementById("logoutBtn").addEventListener("click", logout);
+document.getElementById("mobileLogoutBtn")?.addEventListener("click", logout);
+
+/* ---------- Mobil: off-canvas menyu ---------- */
+
+const sidebarPanel = document.getElementById("sidebarPanel");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+const mobileTopbarTitle = document.getElementById("mobileTopbarTitle");
+
+function openMobileSidebar() {
+  sidebarPanel?.classList.add("mobile-open");
+  sidebarBackdrop?.classList.add("show");
+  document.body.classList.add("no-scroll");
+}
+function closeMobileSidebar() {
+  sidebarPanel?.classList.remove("mobile-open");
+  sidebarBackdrop?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+}
+mobileMenuBtn?.addEventListener("click", openMobileSidebar);
+sidebarBackdrop?.addEventListener("click", closeMobileSidebar);
 
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -144,6 +165,8 @@ document.getElementById("sideNav").addEventListener("click", (e) => {
   btn.classList.add("active");
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
+  if (mobileTopbarTitle && btn.dataset.title) mobileTopbarTitle.textContent = btn.dataset.title;
+  closeMobileSidebar();
 });
 
 /* ---------- Mahsulotlar ---------- */
@@ -172,14 +195,14 @@ function renderProductsTable(filterText = "") {
         : noImageSVG();
       return `
         <tr data-id="${p.id}">
-          <td>${thumb}</td>
-          <td>${escapeHtml(p.name)}</td>
-          <td>${escapeHtml(p.category)}</td>
-          <td>${formatPrice(p.cost_price)}</td>
-          <td>${formatPrice(p.sale_price)}</td>
-          <td class="${profitClass}">${formatPrice(p.profit)} (${p.profit_margin_percent}%)</td>
-          <td><span class="pill-status ${p.is_active ? "on" : "off"}">${p.is_active ? "Faol" : "Yashirin"}</span></td>
-          <td>
+          <td data-label="">${thumb}</td>
+          <td data-label="Nomi"><strong>${escapeHtml(p.name)}</strong></td>
+          <td data-label="Kategoriya">${escapeHtml(p.category)}</td>
+          <td data-label="Tannarx">${formatPrice(p.cost_price)}</td>
+          <td data-label="Sotish narxi">${formatPrice(p.sale_price)}</td>
+          <td data-label="Foyda" class="${profitClass}">${formatPrice(p.profit)} (${p.profit_margin_percent}%)</td>
+          <td data-label="Holat"><span class="pill-status ${p.is_active ? "on" : "off"}">${p.is_active ? "Faol" : "Yashirin"}</span></td>
+          <td data-label="">
             <div class="row-actions">
               <button class="icon-btn edit-btn" title="Tahrirlash">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -777,10 +800,13 @@ document.getElementById('sideNav')?.addEventListener('click',e=>{if(e.target.clo
 async function loadSiteLinks(){try{const d=await apiRequest('/admin/site-links');({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}&&Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}).forEach(([k,id])=>document.getElementById(id).value=d[k]||''));}catch(e){showToast(e.message,true);}}
 document.getElementById('siteLinksForm')?.addEventListener('submit',async e=>{e.preventDefault();try{for(const [k,id] of Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}))await apiRequest(`/admin/site-links/${k}`,{method:'PUT',body:JSON.stringify({value:document.getElementById(id).value.trim()})});showToast('Aloqa ma’lumotlari saqlandi');}catch(err){showToast(err.message,true);}});
 
-/* ---------- Xavfsizlik (honeypot: SQLi / XSS urinishlari) ---------- */
+/* ---------- Xavfsizlik (honeypot: SQLi / XSS urinishlari, IP bo'yicha guruhlangan) ---------- */
 
 state.lastSeenSecurityEventId = Number(localStorage.getItem('lg_last_seen_security_event') || 0);
 state.securityPollTimer = null;
+state.expandedIps = new Set();
+state.honeypotMessagesByIp = {};
+state.securityHeartbeats = {}; // backend'dan keladi: { ip: { online, last_seen_at } }
 
 function formatSecurityDate(iso) {
   try {
@@ -790,7 +816,63 @@ function formatSecurityDate(iso) {
   }
 }
 
-function renderSecurityEvents(data) {
+// IP haqiqatan onlaynmi -- honeypot 400-sahifasi shu IP dan hali ham ochiq
+// turgan brauzerdan yuborayotgan "heartbeat" signaliga asoslanadi (backend:
+// app/honeypot_state.py), oxirgi hujum vaqtiga emas. Shu tufayli brauzer
+// yopilishi bilan (sendBeacon orqali) yoki heartbeat to'xtashi bilan (bir
+// necha soniya ichida) holat "Oflayn"ga o'tadi.
+function ipOnlineStatus(ip) {
+  const hb = state.securityHeartbeats[ip];
+  if (hb && hb.online) return { online: true, label: 'Onlayn', title: '' };
+  const title = hb && hb.last_seen_at ? `Sahifadan oxirgi signal: ${formatSecurityDate(hb.last_seen_at)}` : 'Bu IP dan honeypot sahifasi ochilgani qayd etilmagan.';
+  return { online: false, label: 'Oflayn', title };
+}
+
+function securityKindBadge(ev) {
+  const label = ev.kind === 'sql_injection' ? 'SQL Injection' : `XSS${ev.xss_type ? ` — ${escapeHtml(ev.xss_type)}` : ''}`;
+  const color = ev.kind === 'sql_injection' ? '#b3452f' : '#a3651f';
+  return `<span class="kind-pill" style="background:${color};">${label}</span>`;
+}
+
+function formatHoneypotShown(msg) {
+  if (!msg.shown_count) return 'Hali ko\'rilmagan';
+  const when = msg.last_shown_at ? formatSecurityDate(msg.last_shown_at) : '';
+  return `${msg.shown_count} marta${when ? ` — oxirgisi ${when}` : ''}`;
+}
+
+function renderIpMessageStatus(ip) {
+  const msg = state.honeypotMessagesByIp[ip];
+  if (!msg) {
+    return `<div class="ip-msg-status empty">Bu IP ga hali shaxsiy xabar yuborilmagan.</div>`;
+  }
+  return `<div class="ip-msg-status active">
+    <div class="ip-msg-text">${escapeHtml(msg.message)}</div>
+    <div class="ip-msg-meta">
+      <span>${msg.telegram_username ? '@' + escapeHtml(msg.telegram_username) : 'Telegram belgilanmagan'}</span>
+      <span>${formatHoneypotShown(msg)}</span>
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" data-cancel-honeypot-msg="${msg.id}">Xabarni bekor qilish</button>
+  </div>`;
+}
+
+function renderIpEventList(events) {
+  return events
+    .map(
+      (ev) => `
+    <div class="ip-event-row">
+      <div class="ip-event-top">
+        ${securityKindBadge(ev)}
+        <span class="ip-event-time">${formatSecurityDate(ev.created_at)}</span>
+      </div>
+      <div class="ip-event-path">${escapeHtml(ev.method)} ${escapeHtml(ev.path)}</div>
+      <div class="ip-event-sample">${escapeHtml(ev.matched_sample)}</div>
+      <div class="ip-event-ua">${escapeHtml(ev.user_agent || '\u2014')}</div>
+    </div>`
+    )
+    .join('');
+}
+
+function renderSecurityIpList(data) {
   document.getElementById('secTotal').textContent = data.total;
   document.getElementById('secSqlCount').textContent = data.sql_injection_count;
   document.getElementById('secXssCount').textContent = data.xss_count;
@@ -801,32 +883,78 @@ function renderSecurityEvents(data) {
     badge.style.display = data.total > 0 ? 'inline-block' : 'none';
   }
 
-  const body = document.getElementById('securityEventsBody');
-  if (!body) return;
+  const container = document.getElementById('securityIpList');
+  if (!container) return;
+
   if (!data.events.length) {
-    body.innerHTML = `<tr><td colspan="6">Hozircha hech qanday hujum urinishi qayd etilmagan.</td></tr>`;
+    const uniqueEl = document.getElementById('secUniqueIps');
+    if (uniqueEl) uniqueEl.textContent = '0';
+    container.innerHTML = `<p class="empty-row" style="padding:30px 18px;text-align:center;">Hozircha hech qanday hujum urinishi qayd etilmagan.</p>`;
     return;
   }
-  body.innerHTML = data.events
-    .map((ev) => {
-      const kindLabel = ev.kind === 'sql_injection' ? 'SQL Injection' : `XSS${ev.xss_type ? ` — ${escapeHtml(ev.xss_type)}` : ''}`;
-      const kindColor = ev.kind === 'sql_injection' ? '#b3452f' : '#a3651f';
-      return `<tr>
-        <td>${formatSecurityDate(ev.created_at)}</td>
-        <td><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:0.72rem;font-weight:700;color:#fff;background:${kindColor};">${kindLabel}</span></td>
-        <td>${escapeHtml(ev.ip_address)}</td>
-        <td style="max-width:180px;overflow-wrap:anywhere;">${escapeHtml(ev.method)} ${escapeHtml(ev.path)}</td>
-        <td style="max-width:260px;overflow-wrap:anywhere;font-family:monospace;font-size:0.78rem;">${escapeHtml(ev.matched_sample)}</td>
-        <td style="max-width:180px;overflow-wrap:anywhere;font-size:0.75rem;color:var(--navy-soft);">${escapeHtml(ev.user_agent || '—')}</td>
-      </tr>`;
+
+  const groups = new Map();
+  data.events.forEach((ev) => {
+    if (!groups.has(ev.ip_address)) groups.set(ev.ip_address, []);
+    groups.get(ev.ip_address).push(ev);
+  });
+
+  const blocks = Array.from(groups.entries())
+    .map(([ip, events]) => ({ ip, events, latest: events[0] }))
+    .sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at));
+
+  const uniqueEl = document.getElementById('secUniqueIps');
+  if (uniqueEl) uniqueEl.textContent = blocks.length;
+
+  container.innerHTML = blocks
+    .map(({ ip, events, latest }) => {
+      const status = ipOnlineStatus(ip);
+      const isOpen = state.expandedIps.has(ip);
+      const hasActiveMsg = Boolean(state.honeypotMessagesByIp[ip]);
+      const kindClass = latest.kind === 'sql_injection' ? 'is-sql' : 'is-xss';
+      return `
+      <div class="ip-block ${kindClass} ${isOpen ? 'open' : ''}" data-ip="${escapeHtml(ip)}">
+        <div class="ip-block-header" data-toggle-ip="${escapeHtml(ip)}" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}">
+          <svg class="ip-block-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+          <div class="ip-block-main">
+            <div class="ip-block-line1">
+              ${securityKindBadge(latest)}
+              <span class="ip-block-ip">${escapeHtml(ip)}</span>
+              ${events.length > 1 ? `<span class="ip-block-count">\u00d7${events.length}</span>` : ''}
+              ${hasActiveMsg ? `<span class="ip-block-msg-dot" title="Faol xabar bor"></span>` : ''}
+            </div>
+            <div class="ip-block-line2">
+              <span class="ip-block-time">${formatSecurityDate(latest.created_at)}</span>
+              <span class="ip-block-status ${status.online ? 'online' : 'offline'}" title="${escapeHtml(status.title)}"><i></i>${status.label}</span>
+            </div>
+          </div>
+          <button type="button" class="ip-block-arrow" data-open-honeypot-msg="${escapeHtml(ip)}" title="Xabar yozish">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="ip-block-detail"${isOpen ? '' : ' hidden'}>
+          ${renderIpMessageStatus(ip)}
+          <div class="ip-event-list">${renderIpEventList(events)}</div>
+        </div>
+      </div>`;
     })
     .join('');
 }
 
 async function loadSecurityEvents({ notify = false } = {}) {
   try {
-    const data = await apiRequest('/admin/security-events?limit=100');
-    renderSecurityEvents(data);
+    const [data, messages] = await Promise.all([
+      apiRequest('/admin/security-events?limit=300'),
+      apiRequest('/admin/security/messages').catch(() => []),
+    ]);
+
+    state.honeypotMessagesByIp = {};
+    (messages || []).forEach((m) => {
+      state.honeypotMessagesByIp[m.ip_address] = m;
+    });
+    state.securityHeartbeats = data.heartbeats || {};
+
+    renderSecurityIpList(data);
 
     if (notify && data.events.length) {
       const newest = data.events[0];
@@ -836,13 +964,13 @@ async function loadSecurityEvents({ notify = false } = {}) {
         localStorage.setItem('lg_last_seen_security_event', String(newest.id));
         if (!isFirstLoad) {
           const label = newest.kind === 'sql_injection' ? 'SQL Injection' : `XSS (${newest.xss_type || ''})`;
-          showToast(`Yangi hujum urinishi ushlandi: ${label} — IP ${newest.ip_address}`, true);
+          showToast(`Yangi hujum urinishi ushlandi: ${label} \u2014 IP ${newest.ip_address}`, true);
         }
       }
     }
   } catch (err) {
-    const body = document.getElementById('securityEventsBody');
-    if (body) body.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+    const container = document.getElementById('securityIpList');
+    if (container) container.innerHTML = `<p class="empty-row" style="padding:30px 18px;text-align:center;">${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -851,10 +979,13 @@ document.getElementById('sideNav')?.addEventListener('click', (e) => {
   if (e.target.closest('[data-view="security"]')) loadSecurityEvents({ notify: false });
 });
 
+// Honeypot sahifasi har 4 soniyada heartbeat yuboradi (backend:
+// HEARTBEAT_INTERVAL_SECONDS), shuning uchun admin panel ham Onlayn/Oflayn
+// holati "real-vaqt" tuyulishi uchun tez-tez (8 soniyada bir) so'raydi.
 function startSecurityPolling() {
   if (state.securityPollTimer) return;
   loadSecurityEvents({ notify: true });
-  state.securityPollTimer = setInterval(() => loadSecurityEvents({ notify: true }), 25000);
+  state.securityPollTimer = setInterval(() => loadSecurityEvents({ notify: true }), 8000);
 }
 function stopSecurityPolling() {
   if (state.securityPollTimer) {
@@ -862,3 +993,295 @@ function stopSecurityPolling() {
     state.securityPollTimer = null;
   }
 }
+
+/* ---------- IP blokini ochish/yopish va honeypot xabar amallari ---------- */
+
+document.getElementById('securityIpList')?.addEventListener('click', (e) => {
+  const openBtn = e.target.closest('[data-open-honeypot-msg]');
+  if (openBtn) {
+    openHoneypotMsgModal(openBtn.dataset.openHoneypotMsg);
+    return;
+  }
+
+  const cancelBtn = e.target.closest('[data-cancel-honeypot-msg]');
+  if (cancelBtn) {
+    if (!confirm('Bu xabarni bekor qilasizmi? Hujumchi endi standart javobni ko\'radi.')) return;
+    (async () => {
+      try {
+        await apiRequest(`/admin/security/messages/${cancelBtn.dataset.cancelHoneypotMsg}`, { method: 'DELETE' });
+        showToast('Xabar bekor qilindi.');
+        loadSecurityEvents({ notify: false });
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    })();
+    return;
+  }
+
+  const header = e.target.closest('[data-toggle-ip]');
+  if (header) {
+    const ip = header.dataset.toggleIp;
+    const block = header.closest('.ip-block');
+    const detail = block?.querySelector('.ip-block-detail');
+    if (!block || !detail) return;
+    const isOpen = block.classList.toggle('open');
+    detail.hidden = !isOpen;
+    header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (isOpen) state.expandedIps.add(ip);
+    else state.expandedIps.delete(ip);
+  }
+});
+
+document.getElementById('securityIpList')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  // Strelka (xabar yozish) yoki bekor qilish tugmasi o'zining tabiiy
+  // click xatti-harakatiga ega -- bu yerda faqat sarlavhaning o'zi
+  // fokusda bo'lganda (nested tugmalar emas) blokni ochamiz/yopamiz.
+  const header = e.target.closest('[data-toggle-ip]');
+  if (!header || e.target !== header) return;
+  e.preventDefault();
+  header.click();
+});
+
+document.getElementById('clearSecurityLogsBtn')?.addEventListener('click', async () => {
+  if (!confirm('Xavfsizlik jurnalidagi barcha yozuvlar butunlay o\'chiriladi. Davom etasizmi?')) return;
+  try {
+    const res = await apiRequest('/admin/security-events', { method: 'DELETE' });
+    showToast(`${res.deleted} ta yozuv o'chirildi.`);
+    state.expandedIps.clear();
+    loadSecurityEvents({ notify: false });
+  } catch (err) {
+    showToast(err.message, true);
+  }
+});
+
+/* ---------- Honeypot: hujumchiga shaxsiy xabar yozish ---------- */
+
+const honeypotMsgOverlay = document.getElementById('honeypotMsgOverlay');
+const honeypotMsgForm = document.getElementById('honeypotMsgForm');
+
+function openHoneypotMsgModal(ip) {
+  document.getElementById('honeypotMsgIp').textContent = ip;
+  honeypotMsgForm.dataset.ip = ip;
+  const existing = state.honeypotMessagesByIp[ip];
+  const note = document.getElementById('honeypotMsgExistingNote');
+  if (existing) {
+    document.getElementById('honeypotMsgText').value = existing.message;
+    document.getElementById('honeypotMsgTelegram').value = existing.telegram_username || '';
+    if (note) {
+      note.textContent = 'Bu IP uchun faol xabar allaqachon bor \u2014 yuborsangiz eskisi shu bilan almashtiriladi.';
+      note.style.display = 'block';
+    }
+  } else {
+    document.getElementById('honeypotMsgText').value = '';
+    document.getElementById('honeypotMsgTelegram').value = '';
+    if (note) note.style.display = 'none';
+  }
+  honeypotMsgOverlay.classList.add('open');
+}
+
+function closeHoneypotMsgModal() {
+  honeypotMsgOverlay.classList.remove('open');
+}
+
+document.getElementById('cancelHoneypotMsgBtn')?.addEventListener('click', closeHoneypotMsgModal);
+honeypotMsgOverlay?.addEventListener('click', (e) => {
+  if (e.target === honeypotMsgOverlay) closeHoneypotMsgModal();
+});
+
+honeypotMsgForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ip = honeypotMsgForm.dataset.ip;
+  const message = document.getElementById('honeypotMsgText').value.trim();
+  const telegram_username = document.getElementById('honeypotMsgTelegram').value.trim() || null;
+  if (!ip || !message) return;
+  try {
+    await apiRequest('/admin/security/messages', {
+      method: 'POST',
+      body: JSON.stringify({ ip_address: ip, message, telegram_username }),
+    });
+    showToast(`Xabar ${ip} uchun yuborildi.`);
+    closeHoneypotMsgModal();
+    state.expandedIps.add(ip);
+    loadSecurityEvents({ notify: false });
+  } catch (err) {
+    showToast(err.message, true);
+  }
+});
+
+/* ---------- Konstruktor o'lchamlari ---------- */
+
+state.constructorSizes = [];
+
+function fmtNum(n) {
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+function sizePanes(s) {
+  if (Array.isArray(s.panes) && s.panes.length) return s.panes;
+  const count = Number(s.pane_count) || 1;
+  return Array.from({ length: count }, () => ({ width_cm: s.width_cm, height_cm: s.height_cm }));
+}
+
+function dimLabel(s) {
+  const panes = sizePanes(s);
+  const allSame = panes.every((p) => p.width_cm === panes[0].width_cm && p.height_cm === panes[0].height_cm);
+  if (allSame) return `${fmtNum(panes[0].width_cm)} x ${fmtNum(panes[0].height_cm)} sm`;
+  return panes.map((p) => `${fmtNum(p.width_cm)}×${fmtNum(p.height_cm)}`).join(', ');
+}
+
+function totalDimLabel(s) {
+  const panes = sizePanes(s);
+  const totalW = panes.reduce((sum, p) => sum + p.width_cm, 0);
+  const maxH = Math.max(...panes.map((p) => p.height_cm));
+  return `${fmtNum(totalW)} x ${fmtNum(maxH)} sm`;
+}
+
+/* ---- Har bir oynaning eni/bo'yini alohida sozlash uchun dinamik ro'yxat
+   (yangi o'lcham qo'shish formasida) -- index.html prototipidagi
+   panelList mantig'i bilan bir xil. ---- */
+function renderNewSizePanesList() {
+  const wrap = document.getElementById('newSizePanesList');
+  if (!wrap) return;
+  const count = Math.max(1, Math.min(20, Number(document.getElementById('newSizePaneCount').value) || 1));
+
+  const old = [...wrap.querySelectorAll('[data-pane]')].map((row) => ({
+    w: row.querySelector('.pane-w')?.value,
+    h: row.querySelector('.pane-h')?.value,
+  }));
+
+  wrap.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const saved = old[i] || {};
+    const row = document.createElement('div');
+    row.dataset.pane = String(i + 1);
+    row.style.cssText = 'display:grid;grid-template-columns:26px 1fr 1fr;gap:8px;align-items:center;';
+    row.innerHTML = `
+      <span style="font-size:11px;font-weight:700;color:var(--navy-soft);text-align:center;">${i + 1}</span>
+      <input type="number" class="pane-w" min="1" max="1000" step="0.5" placeholder="Eni (sm)" value="${saved.w ?? ''}" required />
+      <input type="number" class="pane-h" min="1" max="1000" step="0.5" placeholder="Bo'yi (sm)" value="${saved.h ?? ''}" required />
+    `;
+    wrap.appendChild(row);
+  }
+}
+
+function collectNewSizePanes() {
+  const wrap = document.getElementById('newSizePanesList');
+  if (!wrap) return [];
+  return [...wrap.querySelectorAll('[data-pane]')].map((row) => ({
+    width_cm: Number(row.querySelector('.pane-w').value),
+    height_cm: Number(row.querySelector('.pane-h').value),
+  }));
+}
+
+document.getElementById('newSizePaneCount')?.addEventListener('input', renderNewSizePanesList);
+renderNewSizePanesList();
+
+function renderConstructorSizesTable() {
+  const body = document.getElementById('constructorSizesTableBody');
+  if (!body) return;
+  if (!state.constructorSizes.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">Hozircha o'lcham qo'shilmagan.</td></tr>`;
+    return;
+  }
+  body.innerHTML = state.constructorSizes
+    .map((s) => `
+      <tr data-id="${s.id}">
+        <td data-label="Nomi"><strong>${escapeHtml(s.label)}</strong></td>
+        <td data-label="Oynalar">${s.pane_count || 1} ta</td>
+        <td data-label="Har biri">${dimLabel(s)}</td>
+        <td data-label="Umumiy">${totalDimLabel(s)}</td>
+        <td data-label="Narxi">${s.price ? formatPrice(s.price) : "—"}</td>
+        <td data-label="Holat"><span class="pill-status toggle-active-size ${s.is_active ? 'on' : 'off'}" style="cursor:pointer;" title="Holatni almashtirish">${s.is_active ? 'Faol' : 'Yashirin'}</span></td>
+        <td data-label="">
+          <div class="row-actions">
+            <button class="icon-btn danger delete-size-btn" title="O'chirish">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>`)
+    .join('');
+
+  body.querySelectorAll('.toggle-active-size').forEach((el) => {
+    el.addEventListener('click', async (e) => {
+      const id = Number(e.target.closest('tr').dataset.id);
+      const size = state.constructorSizes.find((s) => s.id === id);
+      if (!size) return;
+      try {
+        await apiRequest(`/admin/constructor/sizes/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: !size.is_active }),
+        });
+        await loadConstructorSizes();
+        showToast('Holat yangilandi');
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    });
+  });
+
+  body.querySelectorAll('.delete-size-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = Number(e.target.closest('tr').dataset.id);
+      const size = state.constructorSizes.find((s) => s.id === id);
+      if (!size) return;
+      if (!confirm(`"${size.label}" o'lchamini o'chirasizmi?`)) return;
+      try {
+        await apiRequest(`/admin/constructor/sizes/${id}`, { method: 'DELETE' });
+        await loadConstructorSizes();
+        showToast("O'lcham o'chirildi");
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    });
+  });
+}
+
+async function loadConstructorSizes() {
+  const body = document.getElementById('constructorSizesTableBody');
+  try {
+    state.constructorSizes = await apiRequest('/admin/constructor/sizes');
+    renderConstructorSizesTable();
+  } catch (err) {
+    if (body) body.innerHTML = `<tr class="empty-row"><td colspan="5">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+document.getElementById('addConstructorSizeForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('constructorSizeFormError');
+  errorBox.textContent = '';
+
+  const label = document.getElementById('newSizeLabel').value.trim();
+  const panes = collectNewSizePanes();
+  const priceRaw = document.getElementById('newSizePrice').value;
+  const price = priceRaw ? Number(priceRaw) : 0;
+
+  const invalidPane = panes.some((p) => !p.width_cm || !p.height_cm);
+  if (!label || !panes.length || invalidPane) {
+    errorBox.textContent = "Nomi va har bir oynaning eni/bo'yini to'ldiring.";
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    await apiRequest('/admin/constructor/sizes', {
+      method: 'POST',
+      body: JSON.stringify({ label, panes, price, is_active: true }),
+    });
+    e.target.reset();
+    renderNewSizePanesList();
+    await loadConstructorSizes();
+    showToast("O'lcham qo'shildi");
+  } catch (err) {
+    errorBox.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('sideNav')?.addEventListener('click', (e) => {
+  if (e.target.closest('[data-view="constructor"]')) loadConstructorSizes();
+});

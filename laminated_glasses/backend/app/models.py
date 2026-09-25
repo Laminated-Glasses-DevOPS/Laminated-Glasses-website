@@ -1,5 +1,6 @@
 """Ma'lumotlar bazasi jadvallari."""
 
+import json
 from datetime import datetime
 
 from sqlalchemy import (
@@ -215,6 +216,45 @@ class SecurityEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class HoneypotMessage(Base):
+    """Admin honeypot orqali muayyan IP manziliga yuborgan shaxsiy xabar.
+
+    Hujumchi (SQLi/XSS urinuvchi) keyingi safar honeypot sahifasiga
+    tushganda, standart kinoyali matn o'rniga shu yerdagi `message`
+    ko'rsatiladi, pastida esa (agar `telegram_username` bo'lsa) "Javob"
+    tugmasi chiqadi -- bosilsa t.me/<username> ga olib boradi.
+
+    is_active=0 qilingan yozuvlar honeypot tomonidan e'tiborga
+    olinmaydi (admin bekor qilgan yoki eskirgan)."""
+
+    __tablename__ = "honeypot_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(64), nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    telegram_username = Column(String(120), nullable=True)
+    is_active = Column(Integer, nullable=False, default=1, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    shown_count = Column(Integer, nullable=False, default=0)
+    last_shown_at = Column(DateTime, nullable=True)
+
+
+class HoneypotHeartbeat(Base):
+    """Honeypot 400-sahifasi ochiq turgan brauzerlardan kelayotgan "yurak
+    urishi". Admin paneldagi Onlayn/Oflayn holati SecurityEvent.created_at
+    (oxirgi HUJUM vaqti) emas, aynan shu jadval asosida hisoblanadi -- shu
+    tufayli hujumchi hech narsa qilmay sahifada shunchaki turgan bo'lsa ham
+    "Onlayn" ko'rinadi, brauzerini yopgach esa tezda "Oflayn"ga o'tadi."""
+
+    __tablename__ = "honeypot_heartbeats"
+
+    ip_address = Column(String(64), primary_key=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # 1 = sahifa ochiq deb hisoblanadi (heartbeat yoki dastlabki render orqali);
+    # 0 = tab/sahifa yopilgani haqida aniq signal (sendBeacon) kelgan.
+    is_open = Column(Integer, nullable=False, default=1)
+
+
 class NewsPost(Base):
     __tablename__ = "news_posts"
     id = Column(Integer, primary_key=True, index=True)
@@ -225,6 +265,59 @@ class NewsPost(Base):
     is_published = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ConstructorSize(Base):
+    """Admin belgilagan, mijoz konstruktor sahifasida tanlashi mumkin bo'lgan
+    oyna o'lchamlari (masalan: \"40 x 60 sm\"). Odatda 2-3 ta o'lcham
+    yetarli, lekin admin xohlagancha qo'shishi/o'chirishi mumkin.
+
+    pane_count -- shu o'lcham tanlanganda rasm nechta alohida oyna
+    (panel)ga bo'lib ko'rsatilishi. Har bir panel endi O'ZINING alohida
+    eni/bo'yiga ega bo'lishi mumkin -- bular `panes_json` da
+    [{"width_cm":.., "height_cm":..}, ...] (uzunligi pane_count ga teng)
+    shaklida saqlanadi. width_cm/height_cm ustunlari orqaga moslik va
+    tezkor saralash/ko'rsatish uchun umumiy o'lcham sifatida saqlanadi:
+    width_cm = barcha panellar enlarining yig'indisi (umumiy kenglik),
+    height_cm = panellar bo'yining eng kattasi (umumiy balandlik).
+
+    is_active=0 bo'lgan o'lchamlar konstruktor sahifasida ko'rinmaydi, lekin
+    bazada saqlanib qoladi -- admin keyin qayta yoqishi mumkin."""
+
+    __tablename__ = "constructor_sizes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String(120), nullable=False)
+    pane_count = Column(Integer, nullable=False, default=1)
+    width_cm = Column(Float, nullable=False)
+    height_cm = Column(Float, nullable=False)
+    panes_json = Column(Text, nullable=True)
+    price = Column(Float, nullable=False, default=0.0)
+    is_active = Column(Integer, nullable=False, default=1)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def panes(self):
+        """Har bir panelning alohida o'lchamini ro'yxat sifatida qaytaradi.
+
+        Eski (panes_json hali yozilmagan) qatorlar uchun orqaga moslik:
+        pane_count ta bir xil width_cm/height_cm dan iborat ro'yxat
+        qaytariladi -- xuddi avvalgi "hammasi bir xil o'lchamda" xatti-
+        harakati kabi."""
+        if self.panes_json:
+            try:
+                data = json.loads(self.panes_json)
+                if isinstance(data, list) and data:
+                    return data
+            except (ValueError, TypeError):
+                pass
+        count = max(1, int(self.pane_count or 1))
+        return [
+            {"width_cm": self.width_cm, "height_cm": self.height_cm}
+            for _ in range(count)
+        ]
+
 
 class SiteLink(Base):
     __tablename__ = "site_links"

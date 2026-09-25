@@ -9,6 +9,7 @@ Server ham API ni, ham frontendni bitta portdan beradi -- shu sababli
 cloudflared tunnel bilan global chiqarish uchun bitta manzil kifoya.
 """
 
+from datetime import datetime
 from urllib.parse import unquote_plus
 
 from fastapi import FastAPI, Request
@@ -16,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import config, models, security, shield, utils
+from . import config, honeypot_state, models, security, shield, utils
 from .database import Base, SessionLocal, engine
 from .routers import admin, public
 
@@ -25,6 +26,13 @@ Base.metadata.create_all(bind=engine)
 try:
     with engine.begin() as conn:
         conn.exec_driver_sql("ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
+except Exception:
+    pass
+# Existing SQLite installations: add the pane-count column (necha oynaga
+# bo'linishi) without losing sizes admin already created.
+try:
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE constructor_sizes ADD COLUMN pane_count INTEGER NOT NULL DEFAULT 1")
 except Exception:
     pass
 
@@ -84,8 +92,36 @@ def _wants_html_page(request: Request) -> bool:
 
 
 def _honeypot_response(kind: str, message: str, request: Request):
+    """HTML so'ralganda (brauzer manzil qatoridan ochilganda) admin ushbu
+    IP uchun shaxsiy xabar yozgan bo'lsa, standart kinoyali matn o'rniga
+    O'SHA xabar va "Javob" tugmasi (agar telegram username bo'lsa)
+    ko'rsatiladi. JSON so'rovlar (saytning o'z fetch chaqiruvlari) bunga
+    tegilmaydi -- ular har doim standart kinoyali javobni oladi.
+
+    Sahifa render qilingan zahoti shu IP uchun heartbeat ham yoziladi --
+    shunday qilib admin panelda "Onlayn" holati sahifa ochilgan ONI
+    ko'rinadi, birinchi JS pulse kelishini kutish shart emas."""
     if _wants_html_page(request):
-        return HTMLResponse(content=shield.render_honeypot_page(message), status_code=400)
+        ip_address = security._get_client_ip(request)
+        db = SessionLocal()
+        try:
+            custom = honeypot_state.active_honeypot_message(db, ip_address)
+            page_message = message
+            reply_url = None
+            if custom is not None:
+                page_message = custom.message
+                if custom.telegram_username:
+                    reply_url = utils.telegram_url(custom.telegram_username)
+                honeypot_state.mark_honeypot_message_shown(db, custom.id)
+            honeypot_state.record_heartbeat(db, ip_address, is_open=True)
+        finally:
+            db.close()
+        return HTMLResponse(
+            content=shield.render_honeypot_page(
+                page_message, reply_url=reply_url, default_message=message
+            ),
+            status_code=400,
+        )
     return JSONResponse(status_code=400, content={"detail": message})
 
 
@@ -97,6 +133,15 @@ async def honeypot_shield(request: Request, call_next):
     qilingan) -- bu shunchaki qo'shimcha himoya: shubhali urinishni bazaga
     yetib bormasdan turib to'xtatadi va hujumchiga real xato o'rniga
     kinoyali javob qaytaradi."""
+    # Fayl yuklash endpointlari (masalan konstruktordagi "Telegramga
+    # yuborish" -- /api/constructor/share) va statik fayllar honeypot
+    # skanerlashidan butunlay chetlab o'tiladi: bu yerda binary/rasm
+    # content yuboriladi, oddiy matn emas -- shuning uchun tasodifan
+    # honeypot naqshlariga mos kelib, haqiqiy so'rov SQL Injection/XSS
+    # deb noto'g'ri bloklanishi mumkin edi.
+    if shield.should_skip_scan(request.url.path):
+        return await call_next(request)
+
     # MUHIM: request.url.query URL-encode qilingan holicha qaytadi (masalan
     # bo'sh joy -> %20, tirnoq -> %27), shuning uchun uni skanerlashdan oldin
     # albatta decode qilish kerak -- aks holda manzil qatoriga yozilgan yoki
@@ -169,7 +214,7 @@ app.mount("/uploads", StaticFiles(directory=str(config.UPLOADS_DIR)), name="uplo
 _PAGE_FILES = {
     "/": "index.html", "/bosh-sahifa": "index.html",
     "/mahsulotlar": "products.html", "/yangiliklar": "news.html",
-    "/aloqa": "contact.html",
+    "/aloqa": "contact.html", "/konstruktor": "constructor.html",
     "/admin": "admin.html",
 }
 for _route, _filename in _PAGE_FILES.items():

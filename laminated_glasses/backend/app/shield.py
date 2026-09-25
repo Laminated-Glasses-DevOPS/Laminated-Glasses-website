@@ -15,9 +15,21 @@ mijoz ismi, xabar) bunga tasodifan mos kelib qolish ehtimoli juda past.
 
 import base64
 import html
+import json
 import re
 from pathlib import Path
 from typing import Optional
+
+from .honeypot_state import HEARTBEAT_INTERVAL_SECONDS
+
+
+def _js_string(value: str) -> str:
+    """Python satrini xavfsiz JS satr literaliga aylantiradi. json.dumps
+    tirnoq/backslash larni escape qiladi; "</" ketma-ketligini qo'shimcha
+    escape qilamiz, aks holda sahifa matni ichiga "</script>" kabi narsa
+    tushib qolsa, brauzer <script> tegidan chiqib ketgan deb hisoblab,
+    qolgan skriptni ishlatmay qo'yishi mumkin."""
+    return json.dumps(value).replace("</", "<\\/")
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _SKULL_PATH = _ASSETS_DIR / "skull.png"
@@ -91,26 +103,70 @@ def detect_xss(text: str) -> Optional[str]:
 
 
 # Bu yo'llarga tegilmaydi: fayl yuklash (rasm, binary) va statik fayllar.
-SKIP_BODY_SCAN_PREFIXES = ("/uploads",)
+# Bunday joylarda foydalanuvchi matn emas, balki binary/rasm content yuboradi
+# -- tasodifan honeypot naqshlariga (masalan "or ...=") mos kelib qolishi
+# mumkin, shuning uchun bular umuman skanerlanmasligi kerak.
+SKIP_BODY_SCAN_PREFIXES = ("/uploads", "/api/constructor/share")
 
 
-def render_honeypot_page(message: str) -> str:
+def should_skip_scan(path: str) -> bool:
+    """Berilgan yo'l honeypot skanerlashidan butunlay chetlab o'tilishi
+    kerakmi (fayl yuklash endpointlari va statik fayllar)."""
+    return path.startswith(SKIP_BODY_SCAN_PREFIXES)
+
+
+def render_honeypot_page(
+    message: str,
+    reply_url: Optional[str] = None,
+    default_message: Optional[str] = None,
+) -> str:
     """Brauzerda to'g'ridan-to'g'ri ochilganda ko'rinadigan, glitch/CRT
     uslubidagi "You Joke me ?" honeypot sahifasi (bosh suyagi rasmi bilan).
 
-    Xavfsizlik eslatmasi: bu yerga uzatiladigan `message` faqat bizning
-    tayyor, oldindan belgilangan kinoyali matnlarimiz (masalan "XSS ...
-    qo'llash uchun ..."), hech qachon foydalanuvchi kiritgan xom matn emas.
-    Shunga qaramay ehtiyot chorasi sifatida html.escape() bilan chiqishdan
-    oldin har doim escape qilinadi -- shu tufayli hujumchi honeypot
-    sahifasining o'ziga qarshi ikkilamchi in'ektsiya (reflected XSS)
-    qila olmaydi."""
+    `reply_url` berilsa (admin shu IP ga shaxsiy xabar + telegram username
+    yozgan bo'lsa), matn ostida animatsiyali "Javob" tugmasi chiqadi va
+    bosilganda shu URL (t.me/<username>) ga olib boradi. Berilmasa, tugma
+    umuman chiqmaydi -- avtomatik (kanned) honeypot javobi o'zgarishsiz
+    qoladi.
+
+    `default_message` -- shu hujum turi uchun standart kinoyali matn
+    (odatda `message` bilan bir xil, faqat admin shaxsiy xabar yozgan
+    holatlarda ikkalasi farqlanadi). Sahifa buni "admin xabarni bekor
+    qildi" holatiga qaytish uchun ishlatadi.
+
+    Sahifa ochiq turgan vaqtda JS muntazam ravishda (bir necha soniyada bir
+    marta) backendga "pulse" yuboradi -- shu orqali admin panelda Onlayn/Oflayn
+    holati va (agar admin xabar yozsa/bekor qilsa) matnning o'zi ham
+    SAHIFANI QAYTA YUKLAMASDAN avtomatik yangilanadi. Tab yopilganda esa
+    sendBeacon orqali darhol "Oflayn" signali yuboriladi.
+
+    Xavfsizlik eslatmasi: bu yerga uzatiladigan `message` bizning tayyor
+    kinoyali matnlarimiz YOKI admin panelidan yozilgan matn bo'lishi mumkin
+    -- ikkalasi ham hech qachon xom holda chiqarilmaydi: html.escape()
+    bilan har doim escape qilinadi, shu tufayli hujumchi honeypot
+    sahifasining o'ziga qarshi ikkilamchi in'ektsiya (reflected/stored XSS)
+    qila olmaydi. `reply_url` ham xuddi shunday escape qilinadi va faqat
+    href atributi ichida ishlatiladi. Pulse javobidagi matn ham DOMga
+    faqat `textContent` orqali yoziladi (`innerHTML` emas), shuning uchun
+    keyingi yangilanishlar ham xom HTML sifatida ishga tushmaydi."""
     safe_message = html.escape(message)
+    default_reason_js = _js_string(
+        default_message if default_message is not None else message
+    )
+    heartbeat_interval_ms = HEARTBEAT_INTERVAL_SECONDS * 1000
     skull_img_tag = (
         f'<img src="{_SKULL_DATA_URI}" alt="" class="skull-image">'
         if _SKULL_DATA_URI
         else ""
     )
+    reply_button_html = ""
+    if reply_url:
+        safe_reply_url = html.escape(reply_url, quote=True)
+        reply_button_html = (
+            f'<a class="reply-btn" href="{safe_reply_url}" '
+            f'target="_blank" rel="noopener noreferrer">'
+            f'<span class="reply-btn-dot"></span>Javob</a>'
+        )
     return f"""<!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -167,6 +223,35 @@ body {{ overflow: hidden; background: #000; color: #fff; font-family: "Courier N
 .reason {{
   margin-top: 14px; max-width: 640px; padding: 0 16px; font-size: clamp(12px,1.6vw,15px);
   letter-spacing: 0.5px; color: rgba(255,255,255,0.55); line-height: 1.5;
+  opacity: 0; transform: translateY(10px);
+  animation: reasonReveal .6s ease-out .35s forwards;
+}}
+@keyframes reasonReveal {{
+  to {{ opacity: 1; transform: translateY(0); }}
+}}
+.reply-btn {{
+  margin-top: 22px; display: inline-flex; align-items: center; gap: 9px;
+  padding: 11px 26px; border: 1px solid rgba(255,255,255,0.35); border-radius: 999px;
+  color: #fff; text-decoration: none; font-family: "Courier New", monospace;
+  font-size: clamp(13px,1.8vw,15px); letter-spacing: 2px; text-transform: uppercase;
+  background: rgba(255,255,255,0.04); backdrop-filter: blur(2px);
+  opacity: 0; transform: translateY(10px);
+  animation: reasonReveal .6s ease-out 1.1s forwards, replyPulse 2.4s ease-in-out 1.8s infinite;
+  transition: background .2s, border-color .2s, transform .15s;
+}}
+.reply-btn:hover {{
+  background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.7);
+  transform: translateY(-1px);
+}}
+.reply-btn-dot {{
+  width: 7px; height: 7px; border-radius: 50%; background: #4ee08a;
+  box-shadow: 0 0 6px 1px rgba(78,224,138,0.8);
+  animation: dotBlink 1.4s ease-in-out infinite;
+}}
+@keyframes dotBlink {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: .25; }} }}
+@keyframes replyPulse {{
+  0%,100% {{ box-shadow: 0 0 0 0 rgba(255,255,255,0.0); }}
+  50% {{ box-shadow: 0 0 0 6px rgba(255,255,255,0.06); }}
 }}
 .error-code {{
   margin-top: 5px; font-size: clamp(80px,15vw,150px); line-height: .85; font-weight: 900;
@@ -213,6 +298,7 @@ body {{ overflow: hidden; background: #000; color: #fff; font-family: "Courier N
     <div class="skull-container">{skull_img_tag}</div>
     <div id="message"></div>
     <p class="reason">{safe_message}</p>
+    {reply_button_html}
     <div class="error-code">400</div>
   </div>
   <div class="scanlines"></div>
@@ -284,6 +370,76 @@ for (let i = 0; i < 12; i++) {{
   line.style.animationDelay = Math.random() * 4 + "s";
   glitchContainer.appendChild(line);
 }}
+
+/* ---------- Real-vaqt: heartbeat (Onlayn holati) + avtomatik yangilanish ----------
+   Sahifa ochiq turgan har {HEARTBEAT_INTERVAL_SECONDS} soniyada backendga
+   "men hali ham ochiqman" signali yuboriladi -- admin panelda IP shu tufayli
+   HAQIQIY real-vaqt Onlayn/Oflayn holatini ko'rsatadi (oxirgi hujum vaqtiga
+   emas). Xuddi shu so'rov javobida joriy faol xabar ham qaytadi, shuning
+   uchun admin yangi xabar yozsa yoki bekor qilsa, bu SAHIFA qayta
+   yuklanmasdan turib o'zi yangilanadi. */
+const DEFAULT_REASON = {default_reason_js};
+const reasonEl = document.querySelector(".reason");
+const centerEl = document.querySelector(".center");
+const errorCodeEl = document.querySelector(".error-code");
+let replyBtn = document.querySelector(".reply-btn");
+
+function buildReplyBtn(url) {{
+  const a = document.createElement("a");
+  a.className = "reply-btn";
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  const dot = document.createElement("span");
+  dot.className = "reply-btn-dot";
+  a.appendChild(dot);
+  a.appendChild(document.createTextNode("Javob"));
+  return a;
+}}
+
+function applyLiveUpdate(data) {{
+  const targetText = (typeof data.message === "string" && data.message) ? data.message : DEFAULT_REASON;
+  if (reasonEl && reasonEl.textContent !== targetText) {{
+    reasonEl.style.transition = "opacity .25s ease";
+    reasonEl.style.opacity = "0";
+    setTimeout(() => {{
+      reasonEl.textContent = targetText;
+      reasonEl.style.opacity = "1";
+    }}, 260);
+  }}
+  const currentHref = replyBtn ? replyBtn.getAttribute("href") : null;
+  if (data.reply_url && data.reply_url !== currentHref) {{
+    if (!replyBtn) {{
+      replyBtn = buildReplyBtn(data.reply_url);
+      centerEl.insertBefore(replyBtn, errorCodeEl);
+    }} else {{
+      replyBtn.setAttribute("href", data.reply_url);
+    }}
+  }} else if (!data.reply_url && replyBtn) {{
+    replyBtn.remove();
+    replyBtn = null;
+  }}
+}}
+
+async function sendPulse() {{
+  try {{
+    const res = await fetch("/api/security/pulse", {{ method: "POST", keepalive: true }});
+    if (!res.ok) return;
+    applyLiveUpdate(await res.json());
+  }} catch (e) {{ /* jim -- sahifa ko'rinishiga ta'sir qilmasin */ }}
+}}
+
+function sendOfflineBeacon() {{
+  try {{ navigator.sendBeacon("/api/security/offline"); }} catch (e) {{ /* jim */ }}
+}}
+
+sendPulse();
+setInterval(sendPulse, {heartbeat_interval_ms});
+window.addEventListener("pagehide", sendOfflineBeacon);
+document.addEventListener("visibilitychange", () => {{
+  if (document.visibilityState === "hidden") sendOfflineBeacon();
+  else sendPulse();
+}});
 </script>
 </body>
 </html>"""
