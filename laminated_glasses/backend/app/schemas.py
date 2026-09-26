@@ -435,6 +435,21 @@ class DatabaseStatusOut(BaseModel):
         return (value.isoformat() + "Z") if value else None
 
 
+class ConfigBundleImportOut(BaseModel):
+    """Admin panelidagi \"Konfiguratsiyani qayta yuklash\" natijasi: zipda
+    qaysi bo'limlar topilib qo'llanilgani (`applied`) va qaysilari
+    topilmagani uchun o'tkazib yuborilgani (`skipped`)."""
+
+    applied: List[str]
+    skipped: List[str]
+    snapshot_filename: Optional[str] = None
+    restored_at: datetime
+
+    @field_serializer("restored_at")
+    def _serialize_restored(self, value: datetime) -> str:
+        return value.isoformat() + "Z"
+
+
 class DatabaseSnapshotOut(BaseModel):
     """Bazani \"tiklash\" (restore) dan OLDIN avtomatik yaratiladigan
     xavfsizlik nusxasi haqida ma'lumot."""

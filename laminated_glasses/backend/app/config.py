@@ -114,6 +114,11 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_DB_UPLOAD_SIZE_MB = 200
 MAX_DB_SNAPSHOTS = 5
 
+# "Konfiguratsiya to'plami" (mahsulotlar+rasmlar, constructor sozlamalari,
+# admin paroli, statistika) eksport/import qilinganda .zip fayl siqilmagan
+# holda shu hajmdan katta bo'lmasligi kerak (zip-bomb himoyasi).
+MAX_CONFIG_BUNDLE_UPLOAD_SIZE_MB = 300
+
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_MINUTES = 15
 

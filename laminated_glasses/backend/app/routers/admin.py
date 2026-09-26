@@ -20,7 +20,7 @@ from starlette.background import BackgroundTask
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import backup, config, db_admin, honeypot_state, models, schemas, security, utils
+from .. import backup, config, config_bundle, db_admin, honeypot_state, models, schemas, security, utils
 from ..database import SessionLocal, get_db
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -894,3 +894,79 @@ def restore_database(
         return db_admin.get_database_status(fresh_db)
     finally:
         fresh_db.close()
+
+
+# ---------- Konfiguratsiya to'plami (mahsulotlar+rasmlar, constructor
+# sozlamalari, admin paroli, statistika/attack loglari) -- bittalab .zip
+# fayl sifatida yuklab olish va qayta yuklash ----------
+#
+# Yagona /database/download dan farqli o'laroq, bu yerda TO'RTTA mustaqil
+# bo'lim (+ rasmlar papkasi) ALOHIDA .db fayllar sifatida bitta zip'ga
+# yig'iladi (qarang: config_bundle.py). Import paytida qaysi bo'lim zipda
+# bo'lmasa, o'sha shunchaki o'tkazib yuboriladi -- qolganlari normal
+# qo'llanadi.
+
+@router.get("/config-bundle/export")
+def export_config_bundle(_admin=Depends(security.get_current_admin)):
+    """Mahsulotlar+rasmlar, constructor sozlamalari, admin paroli va
+    statistika/attack loglarini bitta .zip fayl sifatida qaytaradi."""
+    tmp_path = config.DATA_DIR / f".config_bundle_tmp_{uuid.uuid4().hex}.zip"
+    config_bundle.build_export_bundle(tmp_path)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return FileResponse(
+        tmp_path,
+        filename=f"laminated_glasses_config_{timestamp}.zip",
+        media_type="application/zip",
+        # Vaqtinchalik zip jo'natilgach o'chiriladi -- diskda qolib
+        # ketmaydi.
+        background=BackgroundTask(lambda p=tmp_path: p.unlink(missing_ok=True)),
+    )
+
+
+@router.post("/config-bundle/import", response_model=schemas.ConfigBundleImportOut)
+def import_config_bundle(
+    request: Request,
+    current_password: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """XAVFLI AMAL: zip ichidagi HAR BIR MAVJUD bo'limni asosiy bazada/
+    uploads papkasida TO'LIQ ALMASHTIRADI. Zipda bo'lmagan bo'limlar
+    xatosiz o'tkazib yuboriladi.
+
+    Himoya qatlamlari /database/restore bilan bir xil: admin joriy
+    PAROLINI qayta kiritishi shart, alohida qattiq tezlik chegarasi bor,
+    va almashtirishdan OLDIN joriy baza avtomatik zaxiralanadi.
+    """
+    security.enforce_rate_limit(
+        request, "config_bundle_import", max_calls=5, window_seconds=3600
+    )
+
+    settings = db.query(models.SiteSettings).first()
+    if settings is None or not security.verify_password(
+        current_password, settings.password_hash
+    ):
+        raise HTTPException(status_code=400, detail="Joriy parol noto'g'ri.")
+
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(
+            status_code=400, detail="Faqat .zip kengaytmali fayl qabul qilinadi."
+        )
+
+    max_bytes = config.MAX_CONFIG_BUNDLE_UPLOAD_SIZE_MB * 1024 * 1024
+    contents = file.file.read(max_bytes + 1)
+    if len(contents) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fayl hajmi {config.MAX_CONFIG_BUNDLE_UPLOAD_SIZE_MB}MB dan katta bo'lmasligi kerak.",
+        )
+
+    tmp_path = config.DATA_DIR / f".config_bundle_import_{uuid.uuid4().hex}.zip"
+    tmp_path.write_bytes(contents)
+    try:
+        result = config_bundle.import_config_bundle(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return result

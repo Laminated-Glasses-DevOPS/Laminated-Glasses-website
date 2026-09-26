@@ -1590,6 +1590,71 @@ document.getElementById("refreshDbStatusBtn")?.addEventListener("click", () => {
   loadDatabaseStatus();
   loadDbSnapshots();
 });
+
+document.getElementById("downloadConfigBundleBtn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("downloadConfigBundleBtn");
+  const filename = `laminated_glasses_config_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.zip`;
+  const ok = await downloadBlobAuthed(
+    `${API_BASE_URL}/admin/config-bundle/export`,
+    filename,
+    btn,
+    "Tayyorlanmoqda...",
+    "To'plamni yuklab olish (.zip)"
+  );
+  if (ok) showToast("Konfiguratsiya to'plami (.zip) yuklab olindi. Uni xavfsiz joyga saqlang.");
+});
+
+document.getElementById("restoreConfigBundleForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("restoreConfigBundleFile");
+  const passwordInput = document.getElementById("restoreConfigBundlePassword");
+  const resultHolder = document.getElementById("configBundleResult");
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const confirmed = window.confirm(
+    "DIQQAT: zip ichidagi HAR BIR MAVJUD bo'lim (rasmlar, mahsulotlar, constructor sozlamalari, " +
+      "parol, statistika) joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan bo'limlar tegilmaydi. " +
+      "Davom etasizmi?"
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("restoreConfigBundleBtn");
+  btn.disabled = true;
+  btn.textContent = "Yuklanmoqda...";
+  if (resultHolder) resultHolder.innerHTML = "";
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("current_password", passwordInput.value);
+
+  try {
+    const result = await apiRequest("/admin/config-bundle/import", {
+      method: "POST",
+      body: formData,
+    });
+    passwordInput.value = "";
+    fileInput.value = "";
+    const appliedLabel = result.applied.length ? result.applied.join(", ") : "(hech biri)";
+    const skippedLabel = result.skipped.length ? result.skipped.join(", ") : "(hech biri)";
+    if (resultHolder) {
+      resultHolder.innerHTML = `
+        <p class="sub" style="margin-top:10px;">
+          <strong>Qo'llanildi:</strong> ${escapeHtml(appliedLabel)}<br/>
+          <strong>O'tkazib yuborildi (zipda topilmadi):</strong> ${escapeHtml(skippedLabel)}
+        </p>`;
+    }
+    showToast("Konfiguratsiya to'plami muvaffaqiyatli qo'llanildi.");
+    loadDatabaseStatus();
+    loadDbSnapshots();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "To'plamni yuklash";
+  }
+});
+
 document.getElementById("sideNav")?.addEventListener("click", (e) => {
   if (e.target.closest('[data-view="database"]')) {
     loadDatabaseStatus();

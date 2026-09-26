@@ -455,6 +455,40 @@
         </div>
       </div>
 
+      <div class="db-status-grid" style="margin-top:20px;">
+        <div class="db-status-card">
+          <h3>Konfiguratsiya to'plami (.zip)</h3>
+          <p class="sub">
+            Mahsulot rasmlari, mahsulotlar (nomi/tavsifi), constructor
+            o'lchamlari, admin paroli va statistika/attack loglarini BITTA
+            .zip fayl ichida, alohida bo'limlar sifatida yuklab oling.
+          </p>
+          <button class="btn btn-primary" id="downloadConfigBundleBtn">To'plamni yuklab olish (.zip)</button>
+        </div>
+        <div class="db-status-card">
+          <h3>Konfiguratsiya to'plamini qayta yuklash</h3>
+          <div class="db-restore-warning">
+            <strong>Diqqat:</strong> zip ichida qaysi bo'lim (rasmlar,
+            mahsulotlar, constructor sozlamalari, parol, statistika) bo'lsa,
+            o'sha bo'lim joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan
+            bo'limlar tegilmasdan qoladi. Almashtirishdan oldin joriy baza
+            avtomatik zaxiralanadi.
+          </div>
+          <form id="restoreConfigBundleForm">
+            <div class="field">
+              <label for="restoreConfigBundleFile">.zip fayl</label>
+              <input type="file" id="restoreConfigBundleFile" accept=".zip" required />
+            </div>
+            <div class="field">
+              <label for="restoreConfigBundlePassword">Joriy admin parol (tasdiqlash uchun)</label>
+              <input type="password" id="restoreConfigBundlePassword" required autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn btn-danger" id="restoreConfigBundleBtn">To'plamni yuklash</button>
+          </form>
+          <div id="configBundleResult"></div>
+        </div>
+      </div>
+
       <div class="db-status-card" style="margin-top:20px;">
         <h3>Tiklashdan oldingi avtomatik zaxiralar</h3>
         <p class="sub">Har safar baza tiklanishidan oldin shu yerga avtomatik nusxa qo'shiladi (oxirgi 5 tasi saqlanadi).</p>
