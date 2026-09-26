@@ -110,6 +110,14 @@
         Xavfsizlik
         <span class="order-badge" id="securityBadge" style="display:none;margin-left:auto;background:#e0483a;color:#fff;border-radius:999px;padding:1px 8px;font-size:0.72rem;font-weight:700;"></span>
       </button>
+      <button data-view="backups" data-title="Zaxira nusxalar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 19h14"/></svg>
+        Zaxira nusxalar
+      </button>
+      <button data-view="database" data-title="Baza holati">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+        Baza holati
+      </button>
       <button data-view="settings" data-title="Sozlamalar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
         Sozlamalar
@@ -366,6 +374,93 @@
         </form>
       </div>
     </div>
+
+    <!-- ---- Backups view ---- -->
+    <section class="view" id="view-backups">
+      <div class="dash-topbar">
+        <div>
+          <h2>Zaxira nusxalar</h2>
+          <p class="sub">
+            Buyurtmalar va yangiliklar har 48 soatda, xavfsizlik jurnali esa har 24 soatda
+            avtomatik tozalanadi. Tozalashdan OLDIN har bir bo'lim uchun alohida Excel (.xlsx)
+            fayl shu yerda tayyor turadi. Faylni yuklab olganingizdan so'ng, u serverdan
+            avtomatik o'chib ketadi -- shuning uchun kerakli backuplarni albatta o'z
+            kompyuteringizga saqlab qo'ying.
+          </p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBackupsBtn">Yangilash</button>
+      </div>
+
+      <div class="backups-list" id="backupsList">
+        <p class="state-msg">Yuklanmoqda...</p>
+      </div>
+    </section>
+
+    <!-- ---- Database status view ---- -->
+    <section class="view" id="view-database">
+      <div class="dash-topbar">
+        <div>
+          <h2>Baza holati</h2>
+          <p class="sub">
+            Diskdagi joriy holat, jadvallardagi yozuvlar soni, bazani (.db fayl)
+            yuklab olish va zarurat bo'lsa qayta yuklash (tiklash).
+          </p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshDbStatusBtn">Yangilash</button>
+      </div>
+
+      <div class="db-status-grid">
+        <div class="db-status-card">
+          <h3>Xotira (storage)</h3>
+          <p class="sub">Server diskidagi joriy foydalanish.</p>
+          <div id="dbStorageBars"><p class="state-msg">Yuklanmoqda...</p></div>
+        </div>
+        <div class="db-status-card">
+          <h3>Jadvallardagi yozuvlar</h3>
+          <p class="sub">Har bir bo'limdagi joriy qatorlar soni.</p>
+          <div class="db-table-counts" id="dbTableCounts"><p class="state-msg">Yuklanmoqda...</p></div>
+        </div>
+      </div>
+
+      <div class="db-status-grid">
+        <div class="db-status-card">
+          <h3>Konfiguratsiyani yuklab olish</h3>
+          <p class="sub">
+            Joriy bazaning to'liq nusxasini (.db fayl) kompyuteringizga saqlab
+            qo'ying -- bu sizning butun sayt ma'lumotlaringiz (mahsulotlar,
+            buyurtmalar, sozlamalar va h.k.).
+          </p>
+          <button class="btn btn-primary" id="downloadDbBtn">Bazani yuklab olish (.db)</button>
+        </div>
+        <div class="db-status-card">
+          <h3>Konfiguratsiyani qayta yuklash (tiklash)</h3>
+          <div class="db-restore-warning">
+            <strong>Diqqat:</strong> bu amal joriy bazadagi BARCHA ma'lumotni
+            (mahsulotlar, buyurtmalar, sozlamalar) yuklangan fayldagi holat bilan
+            almashtiradi. Almashtirishdan oldin joriy baza avtomatik zaxiralanadi,
+            ammo faqat oldindan shu paneldan yuklab olingan, o'zgartirilmagan .db
+            faylni yuklashni tavsiya qilamiz.
+          </div>
+          <form id="restoreDbForm">
+            <div class="field">
+              <label for="restoreDbFile">.db fayl</label>
+              <input type="file" id="restoreDbFile" accept=".db" required />
+            </div>
+            <div class="field">
+              <label for="restoreDbPassword">Joriy admin parol (tasdiqlash uchun)</label>
+              <input type="password" id="restoreDbPassword" required autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn btn-danger" id="restoreDbBtn">Bazani tiklash</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="db-status-card" style="margin-top:20px;">
+        <h3>Tiklashdan oldingi avtomatik zaxiralar</h3>
+        <p class="sub">Har safar baza tiklanishidan oldin shu yerga avtomatik nusxa qo'shiladi (oxirgi 5 tasi saqlanadi).</p>
+        <div class="backups-list" id="dbSnapshotsList"><p class="state-msg">Yuklanmoqda...</p></div>
+      </div>
+    </section>
 
     <!-- ---- Settings view ---- -->
     <section class="view" id="view-settings">

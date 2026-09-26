@@ -9,6 +9,7 @@ Server ham API ni, ham frontendni bitta portdan beradi -- shu sababli
 cloudflared tunnel bilan global chiqarish uchun bitta manzil kifoya.
 """
 
+import os
 from datetime import datetime
 from urllib.parse import unquote_plus
 
@@ -125,6 +126,26 @@ def _honeypot_response(kind: str, message: str, request: Request):
     return JSONResponse(status_code=400, content={"detail": message})
 
 
+def _is_verified_admin_request(request: Request) -> bool:
+    """So'rovda haqiqiy, amal qiluvchi admin JWT tokeni bormi?
+
+    Honeypot filtri asli anonim/mehmon trafigidagi hujum urinishlarini
+    ushlash uchun mo'ljallangan. Lekin u oldin BARCHA so'rovlarni, shu
+    jumladan JWT bilan allaqachon tasdiqlangan admin so'rovlarini ham
+    skanerlar edi -- natijada admin yangilik/izoh matnida tasodifan
+    "--" bilan tugagan gap yoki "... yoki narx=narx" kabi so'z birikmasi
+    bo'lsa, honeypot buni hujum deb hisoblab, ADMINNING O'ZINI bloklab
+    qo'yishi mumkin edi. Login endpointi bunga kirmaydi -- u hali
+    tokensiz so'ralayotgani uchun baribir skanerlanadi."""
+    if request.url.path.startswith("/api/admin/login"):
+        return False
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    payload = security.decode_access_token(auth[7:].strip())
+    return bool(payload and payload.get("sub") == "admin")
+
+
 @app.middleware("http")
 async def honeypot_shield(request: Request, call_next):
     """SQL Injection va XSS urinishlarini ushlaydigan honeypot qatlami.
@@ -140,6 +161,12 @@ async def honeypot_shield(request: Request, call_next):
     # honeypot naqshlariga mos kelib, haqiqiy so'rov SQL Injection/XSS
     # deb noto'g'ri bloklanishi mumkin edi.
     if shield.should_skip_scan(request.url.path):
+        return await call_next(request)
+
+    # Tasdiqlangan admin so'rovlari ham chetlab o'tiladi (yuqoridagi
+    # izohga qarang) -- honeypotning maqsadi anonim hujumchilarni ushlash,
+    # o'z paneliga kirgan adminni emas.
+    if _is_verified_admin_request(request):
         return await call_next(request)
 
     # MUHIM: request.url.query URL-encode qilingan holicha qaytadi (masalan
@@ -201,6 +228,17 @@ def seed_default_data() -> None:
                 )
             )
             db.commit()
+            # Parol .env orqali aniq berilmagan bo'lsa, u tasodifiy
+            # yaratiladi (config.py) -- shu bois admin uni yo'qotib
+            # qo'ymasligi uchun bu yerda, faqat BIRINCHI marta, konsolga
+            # aniq chiqarib qo'yamiz.
+            if not os.getenv("DEFAULT_ADMIN_PASSWORD", "").strip():
+                print("=" * 64)
+                print("  ADMIN PANEL UCHUN BOSHLANG'ICH PAROL YARATILDI:")
+                print(f"  {config.DEFAULT_ADMIN_PASSWORD}")
+                print("  Iltimos, birinchi kirishdan so'ng buni albatta")
+                print("  Sozlamalar bo'limidan o'zgartiring va xavfsiz joyga yozib qo'ying.")
+                print("=" * 64)
         utils.purge_expired_cart_items(db)
     finally:
         db.close()

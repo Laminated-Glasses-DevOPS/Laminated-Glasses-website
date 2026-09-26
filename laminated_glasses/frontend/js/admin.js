@@ -1285,3 +1285,314 @@ document.getElementById('addConstructorSizeForm')?.addEventListener('submit', as
 document.getElementById('sideNav')?.addEventListener('click', (e) => {
   if (e.target.closest('[data-view="constructor"]')) loadConstructorSizes();
 });
+
+/* ---------- Zaxira nusxalar (backups) ---------- */
+
+function backupEmptyState() {
+  return `<p class="state-msg">Hozircha hech qanday zaxira fayli yo'q. Fayllar tozalash tsikli oldidan (buyurtmalar/yangiliklar — 48 soatda, xavfsizlik jurnali — 24 soatda) avtomatik paydo bo'ladi.</p>`;
+}
+
+function renderBackupsList(items) {
+  const holder = document.getElementById("backupsList");
+  if (!items.length) {
+    holder.innerHTML = backupEmptyState();
+    return;
+  }
+  holder.innerHTML = items
+    .map(
+      (b) => `
+      <div class="backup-row" data-filename="${escapeHtml(b.filename)}">
+        <div class="backup-row-info">
+          <strong>${escapeHtml(b.section_label)}</strong>
+          <span class="sub">${formatDate(b.created_at)} · ${b.size_kb} KB</span>
+        </div>
+        <button class="btn btn-primary btn-sm backup-download-btn">Yuklab olish (.xlsx)</button>
+      </div>`
+    )
+    .join("");
+
+  holder.querySelectorAll(".backup-download-btn").forEach((btn) => {
+    btn.addEventListener("click", () => downloadBackup(btn));
+  });
+}
+
+async function loadBackups() {
+  const holder = document.getElementById("backupsList");
+  holder.innerHTML = `<p class="state-msg">Yuklanmoqda...</p>`;
+  try {
+    const items = await apiRequest("/admin/backups");
+    renderBackupsList(items);
+  } catch (err) {
+    holder.innerHTML = `<p class="state-msg">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function downloadBackup(btn) {
+  const row = btn.closest(".backup-row");
+  const filename = row.dataset.filename;
+  btn.disabled = true;
+  btn.textContent = "Yuklanmoqda...";
+  try {
+    // Bu fayl himoyalangan endpoint (Bearer token talab qiladi), shuning
+    // uchun oddiy <a href> havola ishlamaydi -- brauzer sahifa navigatsiyasida
+    // maxsus headerlarni yubora olmaydi. Shu sabab fetch orqali blob sifatida
+    // olib, keyin vaqtinchalik havola orqali yuklab olamiz.
+    const res = await fetch(`${API_BASE_URL}/admin/backups/${encodeURIComponent(filename)}/download`, {
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      logout();
+      throw new Error("Sessiya tugagan. Qaytadan kiring.");
+    }
+    if (!res.ok) {
+      let detail = `Xatolik (${res.status})`;
+      try {
+        const data = await res.json();
+        if (data.detail) detail = data.detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    showToast("Zaxira fayli yuklab olindi. Server tarafida u endi o'chirildi.");
+    // Fayl serverda avtomatik o'chirilgani uchun ro'yxatni yangilaymiz.
+    row.remove();
+    if (!document.querySelectorAll(".backup-row").length) {
+      document.getElementById("backupsList").innerHTML = backupEmptyState();
+    }
+  } catch (err) {
+    showToast(err.message, true);
+    btn.disabled = false;
+    btn.textContent = "Yuklab olish (.xlsx)";
+  }
+}
+
+document.getElementById("refreshBackupsBtn")?.addEventListener("click", loadBackups);
+document.getElementById("sideNav")?.addEventListener("click", (e) => {
+  if (e.target.closest('[data-view="backups"]')) loadBackups();
+});
+
+/* ---------- Baza holati (Database status) ---------- */
+
+function formatSizeKb(kb) {
+  const num = Number(kb) || 0;
+  if (num >= 1024 * 1024) return `${(num / (1024 * 1024)).toFixed(2)} GB`;
+  if (num >= 1024) return `${(num / 1024).toFixed(1)} MB`;
+  return `${num.toFixed(0)} KB`;
+}
+
+function renderStorageBars(status) {
+  const holder = document.getElementById("dbStorageBars");
+  const rows = [
+    { label: "Baza fayli (.db)", value: status.db_size_kb },
+    { label: "Yuklangan rasmlar (uploads)", value: status.uploads_size_kb },
+    { label: "Excel zaxiralar (backups)", value: status.backups_size_kb },
+  ];
+  const diskPercent = status.disk_used_percent || 0;
+  const warnClass = diskPercent >= 85 ? " warn" : "";
+
+  holder.innerHTML = `
+    <div class="storage-bar-row">
+      <div class="storage-bar-label">
+        <span>Umumiy disk</span>
+        <span>${formatSizeKb(status.disk_used_kb)} / ${formatSizeKb(status.disk_total_kb)} (${diskPercent}%)</span>
+      </div>
+      <div class="storage-bar-track"><div class="storage-bar-fill${warnClass}" style="width:${Math.min(100, diskPercent)}%"></div></div>
+    </div>
+    ${rows
+      .map(
+        (r) => `
+      <div class="storage-bar-row">
+        <div class="storage-bar-label"><span>${escapeHtml(r.label)}</span><span>${formatSizeKb(r.value)}</span></div>
+      </div>`
+      )
+      .join("")}
+    ${
+      status.last_snapshot_at
+        ? `<p class="sub" style="margin-top:8px;">Oxirgi avtomatik zaxira: ${formatDate(status.last_snapshot_at)}</p>`
+        : ""
+    }
+  `;
+}
+
+function renderTableCounts(tables) {
+  const holder = document.getElementById("dbTableCounts");
+  if (!tables || !tables.length) {
+    holder.innerHTML = `<p class="state-msg">Ma'lumot yo'q.</p>`;
+    return;
+  }
+  holder.innerHTML = tables
+    .map(
+      (t) => `
+      <div class="db-table-count-row">
+        <span>${escapeHtml(t.label)}</span>
+        <strong>${t.rows.toLocaleString("uz-UZ")}</strong>
+      </div>`
+    )
+    .join("");
+}
+
+async function loadDatabaseStatus() {
+  try {
+    const status = await apiRequest("/admin/database/status");
+    renderStorageBars(status);
+    renderTableCounts(status.tables);
+  } catch (err) {
+    document.getElementById("dbStorageBars").innerHTML = `<p class="state-msg">${escapeHtml(err.message)}</p>`;
+    document.getElementById("dbTableCounts").innerHTML = "";
+  }
+}
+
+function dbSnapshotEmptyState() {
+  return `<p class="state-msg">Hozircha avtomatik zaxira nusxa yo'q -- bu yerga faqat bazani "tiklash" amalidan oldin yozuv qo'shiladi.</p>`;
+}
+
+async function loadDbSnapshots() {
+  const holder = document.getElementById("dbSnapshotsList");
+  holder.innerHTML = `<p class="state-msg">Yuklanmoqda...</p>`;
+  try {
+    const items = await apiRequest("/admin/database/snapshots");
+    if (!items.length) {
+      holder.innerHTML = dbSnapshotEmptyState();
+      return;
+    }
+    holder.innerHTML = items
+      .map(
+        (s) => `
+      <div class="backup-row" data-filename="${escapeHtml(s.filename)}">
+        <div class="backup-row-info">
+          <strong>Bazaning avtomatik zaxirasi</strong>
+          <span class="sub">${formatDate(s.created_at)} · ${formatSizeKb(s.size_kb)}</span>
+        </div>
+        <button class="btn btn-ghost btn-sm db-snapshot-download-btn">Yuklab olish (.db)</button>
+      </div>`
+      )
+      .join("");
+    holder.querySelectorAll(".db-snapshot-download-btn").forEach((btn) => {
+      btn.addEventListener("click", () => downloadDbSnapshot(btn));
+    });
+  } catch (err) {
+    holder.innerHTML = `<p class="state-msg">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function downloadBlobAuthed(url, filename, btn, busyText, idleText) {
+  btn.disabled = true;
+  btn.textContent = busyText;
+  try {
+    const res = await fetch(url, { headers: authHeaders() });
+    if (res.status === 401) {
+      logout();
+      throw new Error("Sessiya tugagan. Qaytadan kiring.");
+    }
+    if (!res.ok) {
+      let detail = `Xatolik (${res.status})`;
+      try {
+        const data = await res.json();
+        if (data.detail) detail = data.detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objUrl);
+    return true;
+  } catch (err) {
+    showToast(err.message, true);
+    return false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = idleText;
+  }
+}
+
+async function downloadDbSnapshot(btn) {
+  const row = btn.closest(".backup-row");
+  const filename = row.dataset.filename;
+  const ok = await downloadBlobAuthed(
+    `${API_BASE_URL}/admin/database/snapshots/${encodeURIComponent(filename)}/download`,
+    filename,
+    btn,
+    "Yuklanmoqda...",
+    "Yuklab olish (.db)"
+  );
+  if (ok) showToast("Zaxira nusxa yuklab olindi.");
+}
+
+document.getElementById("downloadDbBtn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("downloadDbBtn");
+  const filename = `laminated_glasses_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.db`;
+  const ok = await downloadBlobAuthed(
+    `${API_BASE_URL}/admin/database/download`,
+    filename,
+    btn,
+    "Tayyorlanmoqda...",
+    "Bazani yuklab olish (.db)"
+  );
+  if (ok) showToast("Baza fayli yuklab olindi. Uni xavfsiz joyga saqlang.");
+});
+
+document.getElementById("restoreDbForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("restoreDbFile");
+  const passwordInput = document.getElementById("restoreDbPassword");
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const confirmed = window.confirm(
+    "DIQQAT: joriy bazadagi BARCHA mahsulot, buyurtma va sozlamalar yuklangan fayl bilan ALMASHTIRILADI. " +
+      "Bu amalni bekor qilib bo'lmaydi (faqat avtomatik zaxiradan qo'lda tiklash mumkin). Davom etasizmi?"
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById("restoreDbBtn");
+  btn.disabled = true;
+  btn.textContent = "Tiklanmoqda...";
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("current_password", passwordInput.value);
+
+  try {
+    const status = await apiRequest("/admin/database/restore", {
+      method: "POST",
+      body: formData,
+    });
+    renderStorageBars(status);
+    renderTableCounts(status.tables);
+    passwordInput.value = "";
+    fileInput.value = "";
+    showToast("Baza muvaffaqiyatli tiklandi.");
+    loadDbSnapshots();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Bazani tiklash";
+  }
+});
+
+document.getElementById("refreshDbStatusBtn")?.addEventListener("click", () => {
+  loadDatabaseStatus();
+  loadDbSnapshots();
+});
+document.getElementById("sideNav")?.addEventListener("click", (e) => {
+  if (e.target.closest('[data-view="database"]')) {
+    loadDatabaseStatus();
+    loadDbSnapshots();
+  }
+});

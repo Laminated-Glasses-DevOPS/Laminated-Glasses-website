@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 import json
+import uuid
 from typing import List, Optional
 
 from fastapi import (
@@ -14,11 +15,13 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import config, honeypot_state, models, schemas, security, utils
-from ..database import get_db
+from .. import backup, config, db_admin, honeypot_state, models, schemas, security, utils
+from ..database import SessionLocal, get_db
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -50,6 +53,34 @@ def login(
 @router.get("/verify")
 def verify_token(_admin=Depends(security.get_current_admin)):
     return {"valid": True}
+
+
+def _find_category_case_insensitive(db: Session, name: str):
+    """Kategoriya nomini KATTA/KICHIK harf farqisiz qidiradi.
+
+    Muammo: avval nomlar faqat aniq (case-sensitive) taqqoslanardi, shu
+    sabab \"Oyna\" va \"oyna\" ikkita ALOHIDA kategoriya bo'lib qolishi
+    mumkin edi -- bu admin uchun chalkashlik va mahsulotlarning noto'g'ri
+    "bo'linib ketishiga" olib kelardi."""
+    return (
+        db.query(models.Category)
+        .filter(func.lower(models.Category.name) == name.strip().lower())
+        .first()
+    )
+
+
+def _normalize_category(db: Session, name: str) -> str:
+    """Kategoriya nomini bazaga mos ravishda normallashtiradi: agar
+    (katta/kichik harfdan qat'i nazar) shunday kategoriya allaqachon
+    mavjud bo'lsa, ANIQ o'sha yozuvdagi nom qaytariladi (mahsulotlar bir
+    xil kategoriya ostida qolishi uchun); aks holda yangi kategoriya
+    yaratiladi."""
+    name = name.strip()
+    existing = _find_category_case_insensitive(db, name)
+    if existing:
+        return existing.name
+    db.add(models.Category(name=name))
+    return name
 
 
 def _product_images(p):
@@ -102,10 +133,12 @@ def create_product(
     saved = [utils.save_product_image(f) for f in files]
     image_filename = saved[0] if saved else None
 
+    normalized_category = _normalize_category(db, category)
+
     product = models.Product(
         name=name.strip(),
         description=description.strip(),
-        category=category.strip(),
+        category=normalized_category,
         cost_price=cost_price,
         sale_price=sale_price,
         is_active=1 if is_active else 0,
@@ -113,10 +146,6 @@ def create_product(
         images_json=json.dumps(saved),
     )
     db.add(product)
-
-    if not db.query(models.Category).filter_by(name=product.category).first():
-        db.add(models.Category(name=product.category))
-
     db.commit()
     db.refresh(product)
     return _to_admin_schema(product)
@@ -145,9 +174,7 @@ def update_product(
     if description is not None:
         product.description = description.strip()
     if category is not None:
-        product.category = category.strip()
-        if not db.query(models.Category).filter_by(name=product.category).first():
-            db.add(models.Category(name=product.category))
+        product.category = _normalize_category(db, category)
     if cost_price is not None:
         product.cost_price = cost_price
     if sale_price is not None:
@@ -210,9 +237,9 @@ def create_category(
     db: Session = Depends(get_db),
     _admin=Depends(security.get_current_admin),
 ):
-    if db.query(models.Category).filter_by(name=payload.name).first():
+    if _find_category_case_insensitive(db, payload.name):
         raise HTTPException(status_code=409, detail="Bu kategoriya allaqachon mavjud.")
-    category = models.Category(name=payload.name)
+    category = models.Category(name=payload.name.strip())
     db.add(category)
     db.commit()
     db.refresh(category)
@@ -365,10 +392,15 @@ def get_stats(
     products = db.query(models.Product).all()
     active = [p for p in products if p.is_active]
 
-    total_revenue = sum(p.sale_price for p in products)
-    total_cost = sum(p.cost_price for p in products)
+    # MUHIM: "potensial daromad/foyda" faqat SAYTDA KO'RINADIGAN (faol)
+    # mahsulotlar bo'yicha hisoblanadi. Avval yashirilgan (is_active=0)
+    # mahsulotlar ham shu summaga qo'shilardi -- bu haqiqatda sotib
+    # bo'lmaydigan tovarni "potensial daromad"ga kiritib, ko'rsatkichni
+    # noto'g'ri (haddan tashqari katta) qilib ko'rsatardi.
+    total_revenue = sum(p.sale_price for p in active)
+    total_cost = sum(p.cost_price for p in active)
 
-    margins = [p.profit_margin_percent for p in products if p.sale_price]
+    margins = [p.profit_margin_percent for p in active if p.sale_price]
     avg_margin = round(sum(margins) / len(margins), 2) if margins else 0.0
 
     orders = db.query(models.Order).all()
@@ -715,3 +747,150 @@ def cancel_honeypot_message(
     msg.is_active = 0
     db.commit()
     return {"ok": True}
+
+
+# ---------- Zaxira nusxalar (backup) ----------
+#
+# Buyurtmalar (48 soat), yangiliklar (48 soat) va xavfsizlik jurnali
+# (24 soat) davriy ravishda TO'LIQ tozalanadi (cleanup.py). Shu tozalashdan
+# OLDIN har bir bo'lim uchun alohida Excel (.xlsx) fayl yaratiladi -- admin
+# shu yerdan yuklab olishi mumkin. Fayl BIR MARTA yuklab olingach, serverdan
+# avtomatik o'chiriladi.
+
+@router.get("/backups", response_model=List[schemas.BackupFileOut])
+def list_backups(_admin=Depends(security.get_current_admin)):
+    return backup.list_backups()
+
+
+@router.get("/backups/{filename}/download")
+def download_backup(filename: str, _admin=Depends(security.get_current_admin)):
+    path = backup.resolve_backup_path(filename)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Bu zaxira fayli topilmadi -- eskirgan, allaqachon yuklab olingan yoki hali yaratilmagan bo'lishi mumkin.",
+        )
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # Fayl to'liq mijozga yuborib bo'lingach, serverdan avtomatik
+        # o'chiriladi -- shu tufayli har bir backup faqat BIR MAROTABA
+        # yuklab olinadi va diskda cheksiz to'planib qolmaydi.
+        background=BackgroundTask(backup.delete_backup_file, path),
+    )
+
+
+# ---------- Baza holati (Database status / konfiguratsiyani yuklab
+# olish va tiklash) ----------
+#
+# Render.com kabi platformalarda kod papkasi har bir deploy'da yangidan
+# yaratiladi -- shu sabab config.DATA_DIR "Persistent Disk"ga ko'rsatilgan
+# bo'lishi kerak (qarang: render.yaml va .env.example). Bu bo'lim admin
+# panelda joriy baza/disk holatini ko'rsatadi va bazani (.db fayl)
+# yuklab olish/qayta yuklash (tiklash) imkonini beradi.
+
+@router.get("/database/status", response_model=schemas.DatabaseStatusOut)
+def database_status(
+    db: Session = Depends(get_db), _admin=Depends(security.get_current_admin)
+):
+    return db_admin.get_database_status(db)
+
+
+@router.get("/database/download")
+def download_database(_admin=Depends(security.get_current_admin)):
+    """Joriy bazaning IZCHIL (consistent) nusxasini .db fayl sifatida
+    qaytaradi -- SQLite'ning o'z backup API'si orqali, oddiy fayl nusxasi
+    emas (qarang: db_admin.make_consistent_db_copy)."""
+    tmp_path = config.DATA_DIR / f".download_tmp_{uuid.uuid4().hex}.db"
+    db_admin.make_consistent_db_copy(tmp_path)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return FileResponse(
+        tmp_path,
+        filename=f"laminated_glasses_{timestamp}.db",
+        media_type="application/octet-stream",
+        # Vaqtinchalik nusxa jo'natilgach o'chiriladi -- diskda qolib
+        # ketmaydi. Joriy ISHCHI bazaga hech qanday ta'sir qilmaydi.
+        background=BackgroundTask(lambda p=tmp_path: p.unlink(missing_ok=True)),
+    )
+
+
+@router.get("/database/snapshots", response_model=List[schemas.DatabaseSnapshotOut])
+def list_database_snapshots(_admin=Depends(security.get_current_admin)):
+    """Bazani tiklashdan OLDIN avtomatik yaratilgan xavfsizlik nusxalari
+    ro'yxati -- noto'g'ri fayl yuklab yuborilgan taqdirda ham, admin shu
+    yerdan oldingi holatni qayta yuklab olishi mumkin."""
+    return db_admin.list_snapshots()
+
+
+@router.get("/database/snapshots/{filename}/download")
+def download_database_snapshot(
+    filename: str, _admin=Depends(security.get_current_admin)
+):
+    path = db_admin.resolve_snapshot_path(filename)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Bu zaxira nusxa topilmadi.")
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+
+@router.post("/database/restore", response_model=schemas.DatabaseStatusOut)
+def restore_database(
+    request: Request,
+    current_password: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """XAVFLI AMAL: joriy bazani yuklangan .db fayl bilan TO'LIQ almashtiradi.
+
+    Qo'shimcha himoya qatlamlari (faqat amal qiluvchi Bearer token bilan
+    cheklanmaydi):
+      1) Admin joriy PAROLINI qayta kiritishi shart -- shu tufayli
+         o'g'irlangan yoki eskirib qolgan (masalan ochiq qolgan brauzer
+         sessiyasidagi) token bilan bu halokatli amalni bajarib bo'lmaydi
+         (parolni o'zgartirish endpointi bilan bir xil mantiq).
+      2) Bu endpoint alohida, qattiq tezlik chegarasiga ega.
+      3) Yuklangan fayl haqiqiy SQLite ekani va kerakli jadvallarga ega
+         ekani tekshiriladi (db_admin.restore_database ichida).
+      4) Almashtirishdan OLDIN joriy baza avtomatik zaxiralanadi.
+    """
+    security.enforce_rate_limit(
+        request, "database_restore", max_calls=5, window_seconds=3600
+    )
+
+    settings = db.query(models.SiteSettings).first()
+    if settings is None or not security.verify_password(
+        current_password, settings.password_hash
+    ):
+        raise HTTPException(status_code=400, detail="Joriy parol noto'g'ri.")
+
+    if not (file.filename or "").lower().endswith(".db"):
+        raise HTTPException(
+            status_code=400, detail="Faqat .db kengaytmali fayl qabul qilinadi."
+        )
+
+    max_bytes = config.MAX_DB_UPLOAD_SIZE_MB * 1024 * 1024
+    # Xotira himoyasi: butun faylni emas, eng ko'pi bilan (max_bytes + 1)
+    # baytni o'qiymiz (utils.save_product_image dagi bilan bir xil mantiq).
+    contents = file.file.read(max_bytes + 1)
+    if len(contents) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fayl hajmi {config.MAX_DB_UPLOAD_SIZE_MB}MB dan katta bo'lmasligi kerak.",
+        )
+
+    tmp_path = config.DATA_DIR / f".restore_tmp_{uuid.uuid4().hex}.db"
+    tmp_path.write_bytes(contents)
+    try:
+        db_admin.restore_database(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    # Bazani almashtirgach, ushbu so'rov ochgan ESKI sessiya eski
+    # ulanishga bog'liq bo'lishi mumkin -- holatni YANGI sessiya bilan
+    # o'qiymiz.
+    fresh_db = SessionLocal()
+    try:
+        return db_admin.get_database_status(fresh_db)
+    finally:
+        fresh_db.close()

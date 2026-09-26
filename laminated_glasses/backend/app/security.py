@@ -1,5 +1,7 @@
 """Parol xeshlash, JWT tokenlar va admin loginini brute-force dan himoya."""
 
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -58,12 +60,70 @@ def get_current_admin(
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Mijozning HAQIQIY IP manzilini aniqlaydi.
+
+    XAVFSIZLIK ESLATMASI: oddiy "X-Forwarded-For" headeriga sukut bo'yicha
+    ISHONIB BO'LMAYDI -- uni har qanday mijoz (brauzer yoki skript) o'zi
+    xohlagancha o'zgartirib yuborishi mumkin. Agar shunga ishonilsa, login
+    brute-force blokini va honeypot IP kuzatuvini har safar headerni
+    almashtirib, osongina chetlab o'tish mumkin bo'lardi.
+
+    Ustuvorlik:
+      1) "CF-Connecting-IP" -- FAQAT Cloudflare Tunnel/Proxy orqali kelganda
+         mavjud bo'ladi va Cloudflare tomonidan edge'da qo'yiladi, mijoz uni
+         o'zgartira olmaydi (Cloudflare har doim o'zining haqiqiy qiymatini
+         yozib qo'yadi) -- shuning uchun ishonchli.
+      2) To'g'ridan-to'g'ri TCP ulanish manzili (`request.client.host`) --
+         buni ham mijoz soxtalashtira olmaydi.
+      3) "X-Forwarded-For" FAQAT admin buni config.TRUST_X_FORWARDED_FOR=true
+         qilib, o'zi ishonadigan proksi (masalan o'z nginx serveri) orqasida
+         ishlatayotganini aniq bildirgandagina ishlatiladi.
+    """
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
+    if config.TRUST_X_FORWARDED_FOR:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+
     if request.client:
         return request.client.host
     return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Oddiy, xotirada saqlanadigan "sliding window" so'rov cheklovchi.
+#
+# Maqsad -- tashqi kutubxonasiz, checkout/savat/rasm yuklash kabi og'ir
+# amallarni skript orqali spam qilishning oldini olish. Haqiqiy mijozlar
+# oddiy foydalanishda bunga hech qachon duch kelmaydi -- chegaralar odatiy
+# foydalanish uchun ancha keng qilib tanlangan.
+# ---------------------------------------------------------------------------
+
+_rate_buckets: dict = defaultdict(deque)
+
+
+def enforce_rate_limit(request: Request, bucket: str, max_calls: int, window_seconds: int) -> None:
+    """Berilgan `bucket` nomi va so'rov IP manzili bo'yicha, oxirgi
+    `window_seconds` ichida `max_calls` dan ko'p so'rov bo'lsa, 429 xatosi
+    bilan to'xtatadi."""
+    ip = _get_client_ip(request)
+    key = f"{bucket}:{ip}"
+    now = time.monotonic()
+    timestamps = _rate_buckets[key]
+
+    while timestamps and now - timestamps[0] > window_seconds:
+        timestamps.popleft()
+
+    if len(timestamps) >= max_calls:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Juda ko'p so'rov yuborildi. Birozdan so'ng qayta urinib ko'ring.",
+        )
+
+    timestamps.append(now)
 
 
 def check_login_allowed(request: Request, db: Session) -> None:

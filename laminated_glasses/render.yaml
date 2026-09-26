@@ -1,0 +1,48 @@
+# Render.com "Blueprint" fayli.
+#
+# Ishlatish: repo'ni GitHub'ga joylang, Render'da "New +" -> "Blueprint"
+# tanlang va shu repo'ni ko'rsating -- Render shu faylni o'qib, servisni
+# avtomatik yaratadi.
+#
+# MUHIM: `disk` bo'limi Render'ning "Persistent Disk"ini ulaydi. Bu
+# BO'LMASA, admin panelda qo'shilgan har bir mahsulot/buyurtma va
+# yuklangan .db fayl KEYINGI deploy yoki server qayta ishga tushganda
+# YO'QOLADI -- Render'da konteyner fayl tizimi kod bilan birga har safar
+# yangidan yaratiladi. `DATA_DIR` shu disk ko'rsatilgan yo'lga
+# yo'naltirilgani uchun baza, uploads/ va backups/ shu yerda saqlanadi va
+# deploy'lar orasida saqlanib qoladi.
+
+services:
+  - type: web
+    name: laminated-glasses
+    runtime: python
+    plan: starter          # Free rejada persistent disk mavjud emas -- kamida "Starter" tarif kerak
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: laminated-glasses-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: "*"          # Deploy qilingach, buni haqiqiy domeningizga almashtiring
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "720"
+      - key: TRUST_X_FORWARDED_FOR
+        value: "false"
+      - key: DEV_RELOAD
+        value: "false"
+      - key: DEFAULT_TELEGRAM_USERNAME
+        value: "@laminated_glasses"
+      - key: SITE_TITLE
+        value: "Laminated Glasses"
+      - key: CART_TTL_DAYS
+        value: "7"

@@ -392,3 +392,65 @@ class StatsResponse(BaseModel):
     sold_orders: int
     sold_revenue: float
     sold_profit: float
+
+
+class BackupFileOut(BaseModel):
+    """Admin panelidagi \"Zaxira nusxalar\" bo'limida ko'rsatiladigan bitta
+    Excel zaxira fayli haqidagi ma'lumot."""
+
+    filename: str
+    section: str
+    section_label: str
+    created_at: datetime
+    size_kb: float
+
+    @field_serializer("created_at")
+    def _serialize_utc(self, value: datetime) -> str:
+        return value.isoformat() + "Z"
+
+
+class DatabaseTableCount(BaseModel):
+    table: str
+    label: str
+    rows: int
+
+
+class DatabaseStatusOut(BaseModel):
+    """Admin panelidagi \"Baza holati\" bo'limi uchun: baza fayli, uploads/
+    va backups/ hajmi, umumiy disk holati va har bir jadvaldagi qatorlar
+    soni."""
+
+    db_size_kb: float
+    uploads_size_kb: float
+    backups_size_kb: float
+    disk_total_kb: float
+    disk_used_kb: float
+    disk_free_kb: float
+    disk_used_percent: float
+    tables: List[DatabaseTableCount]
+    last_snapshot_at: Optional[datetime] = None
+
+    @field_serializer("last_snapshot_at")
+    def _serialize_last_snapshot(self, value: Optional[datetime]) -> Optional[str]:
+        return (value.isoformat() + "Z") if value else None
+
+
+class DatabaseSnapshotOut(BaseModel):
+    """Bazani \"tiklash\" (restore) dan OLDIN avtomatik yaratiladigan
+    xavfsizlik nusxasi haqida ma'lumot."""
+
+    filename: str
+    created_at: datetime
+    size_kb: float
+
+    @field_serializer("created_at")
+    def _serialize_created(self, value: datetime) -> str:
+        return value.isoformat() + "Z"
+
+
+class DatabaseRestoreConfirm(BaseModel):
+    """Bazani tiklashdan oldin admin joriy parolini qayta kiritadi -- bu,
+    o'g'irlangan/session-hijack qilingan tokenning bunday halokatli amalni
+    (butun bazani almashtirish) bajarishiga qo'shimcha to'siq."""
+
+    current_password: str = Field(min_length=1, max_length=200)

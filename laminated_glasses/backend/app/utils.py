@@ -28,8 +28,14 @@ def save_product_image(file: UploadFile) -> str:
     """Rasmni diskka saqlaydi va faqat fayl nomini qaytaradi."""
     suffix = _validate_image(file)
 
-    contents = file.file.read()
     max_bytes = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    # Xotira himoyasi: `read(max_bytes + 1)` chaqiruvi faylning haqiqiy
+    # hajmidan qat'i nazar, xotiraga eng ko'pi bilan (max_bytes + 1) baytni
+    # o'qiydi. Avval oddiy `.read()` chaqirilardi -- bu esa juda katta
+    # (masalan bir necha GB) fayl yuborilganda, tekshiruvdan OLDIN
+    # butun faylni xotiraga yuklab, serverni xotira tanqisligiga olib
+    # kelishi mumkin edi.
+    contents = file.file.read(max_bytes + 1)
     if len(contents) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -81,8 +87,8 @@ def save_constructor_preview_image(file: UploadFile) -> str:
     rasmlariga esa hech qachon tegmaydi."""
     suffix = _validate_image(file)
 
-    contents = file.file.read()
     max_bytes = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    contents = file.file.read(max_bytes + 1)  # xotira himoyasi -- save_product_image dagi izohga qarang
     if len(contents) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

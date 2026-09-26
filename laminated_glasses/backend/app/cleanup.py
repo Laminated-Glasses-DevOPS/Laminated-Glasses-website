@@ -21,7 +21,7 @@ intervalida cheksiz tsiklda uxlab-ishlab turadi.
 import asyncio
 import logging
 
-from . import models, utils
+from . import backup, models, utils
 from .database import SessionLocal
 
 logger = logging.getLogger("cleanup")
@@ -33,9 +33,14 @@ ORDERS_INTERVAL_SECONDS = 48 * 3600
 
 
 def purge_security_logs() -> int:
-    """Havfsizlik (SQLi/XSS honeypot) jurnalini to'liq tozalaydi."""
+    """Havfsizlik (SQLi/XSS honeypot) jurnalini, avval Excel'ga zaxiralab,
+    to'liq tozalaydi."""
     db = SessionLocal()
     try:
+        events = db.query(models.SecurityEvent).order_by(models.SecurityEvent.created_at.asc()).all()
+        if not events:
+            return 0
+        backup.backup_security_logs(events)
         count = db.query(models.SecurityEvent).delete()
         db.commit()
         return count
@@ -64,9 +69,14 @@ def purge_constructor_previews() -> int:
 
 
 def purge_news() -> int:
-    """Yangiliklar bo'limidagi barcha yozuvlarni to'liq tozalaydi."""
+    """Yangiliklar bo'limidagi barcha yozuvlarni, avval Excel'ga
+    zaxiralab, to'liq tozalaydi."""
     db = SessionLocal()
     try:
+        posts = db.query(models.NewsPost).order_by(models.NewsPost.created_at.asc()).all()
+        if not posts:
+            return 0
+        backup.backup_news(posts)
         count = db.query(models.NewsPost).delete()
         db.commit()
         return count
@@ -84,10 +94,14 @@ def purge_orders() -> int:
     Order.items uchun belgilangan `cascade=\"all, delete-orphan\"` ishlaydi
     va OrderItem qatorlari ham birga o'chadi. Customer jadvaliga
     (mijoz ismi/ma'lumotlari) hech qanday cascade yo'q -- ular saqlanib
-    qoladi."""
+    qoladi. O'chirishdan OLDIN barcha buyurtmalar (va ularning tarkibi)
+    Excel faylga to'liq zaxiralanadi."""
     db = SessionLocal()
     try:
-        orders = db.query(models.Order).all()
+        orders = db.query(models.Order).order_by(models.Order.created_at.asc()).all()
+        if not orders:
+            return 0
+        backup.backup_orders(orders)
         count = len(orders)
         for order in orders:
             db.delete(order)

@@ -143,11 +143,12 @@ def get_customer(device_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/customer", response_model=schemas.CustomerOut, status_code=201)
-def register_customer(payload: schemas.CustomerIn, db: Session = Depends(get_db)):
+def register_customer(payload: schemas.CustomerIn, request: Request, db: Session = Depends(get_db)):
     """Ismni bazaga yozadi -- faqat BIR MAROTABA. Shu device_id allaqachon
     ro'yxatdan o'tgan bo'lsa, ism o'zgartirilmaydi va mavjud yozuv o'zgarishsiz
     qaytariladi: ism qurilmaga bir marta bog'lanadi va keyin almashtirib
     bo'lmaydi."""
+    security.enforce_rate_limit(request, "register_customer", max_calls=20, window_seconds=600)
     customer = (
         db.query(models.Customer)
         .filter(models.Customer.device_id == payload.device_id)
@@ -222,7 +223,8 @@ def get_cart(device_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/cart", response_model=schemas.CartOut, status_code=201)
-def add_to_cart(payload: schemas.CartItemIn, db: Session = Depends(get_db)):
+def add_to_cart(payload: schemas.CartItemIn, request: Request, db: Session = Depends(get_db)):
+    security.enforce_rate_limit(request, "add_to_cart", max_calls=60, window_seconds=300)
     customer = _customer_or_404(db, payload.device_id)
     utils.purge_expired_cart_items(db, customer.id)
 
@@ -307,11 +309,14 @@ def clear_cart(device_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/checkout", response_model=schemas.CheckoutOut, status_code=201)
-def checkout(payload: schemas.CheckoutIn, db: Session = Depends(get_db)):
+def checkout(payload: schemas.CheckoutIn, request: Request, db: Session = Depends(get_db)):
     """Savatni buyurtmaga aylantiradi va Telegram havolasini qaytaradi.
 
     Telegram username butun loyihada faqat shu javobda uchraydi.
     """
+    # Skript orqali cheksiz buyurtma yaratib, admin panelini spam bilan
+    # to'ldirishning oldini olish uchun cheklov.
+    security.enforce_rate_limit(request, "checkout", max_calls=8, window_seconds=600)
     customer = _customer_or_404(db, payload.device_id)
     utils.purge_expired_cart_items(db, customer.id)
 
@@ -412,6 +417,7 @@ async def share_constructor_preview(
     xabar tuziladi. Haqiqiy jo'natishni (checkout oqimidagi kabi) mijozning
     o'zi Telegram ilovasida \"Yuborish\"ni bosib amalga oshiradi -- bu
     yerda bot orqali avtomatik xabar yuborilmaydi."""
+    security.enforce_rate_limit(request, "constructor_share", max_calls=15, window_seconds=600)
     # Bu rasmlar mahsulot rasmlaridan ALOHIDA papkaga saqlanadi (constructor
     # preview) -- shu tufayli har 24 soatlik avtomatik tozalash faqat shu
     # vaqtinchalik fayllarni o'chiradi, mahsulotlarning joriy rasmlariga

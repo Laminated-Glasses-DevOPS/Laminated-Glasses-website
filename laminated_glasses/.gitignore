@@ -1,0 +1,21 @@
+# Maxfiy va faqat lokal muhitga tegishli fayllar -- hech qachon Git'ga
+# qo'shilmasligi kerak (parollar, JWT kaliti, mijozlar bazasi, rasmlar).
+
+backend/.env
+backend/app/.secret_key
+backend/app/.admin_password
+backend/app/*.db
+backend/app/uploads/
+backend/app/backups/
+backend/app/db_snapshots/
+
+# DATA_DIR muhit o'zgaruvchisi orqali boshqa joyga ko'rsatilgan bo'lsa ham,
+# xavfsizlik uchun umumiy naqshlar:
+*.db
+.secret_key
+.admin_password
+
+__pycache__/
+*.pyc
+.venv/
+venv/
