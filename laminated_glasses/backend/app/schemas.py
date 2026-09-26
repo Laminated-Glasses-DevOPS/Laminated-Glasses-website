@@ -178,7 +178,6 @@ class TokenResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
     new_password: str = Field(min_length=4, max_length=200)
 
 

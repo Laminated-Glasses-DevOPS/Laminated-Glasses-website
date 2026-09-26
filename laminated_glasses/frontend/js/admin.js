@@ -488,7 +488,6 @@ document.getElementById("changePasswordForm").addEventListener("submit", async (
   errorEl.textContent = "";
   successEl.textContent = "";
 
-  const current = document.getElementById("currentPassword").value;
   const next = document.getElementById("newPassword").value;
   const confirmVal = document.getElementById("confirmPassword").value;
 
@@ -500,7 +499,7 @@ document.getElementById("changePasswordForm").addEventListener("submit", async (
   try {
     await apiRequest("/admin/settings/password", {
       method: "PUT",
-      body: JSON.stringify({ current_password: current, new_password: next }),
+      body: JSON.stringify({ new_password: next }),
     });
     successEl.textContent = "Parol muvaffaqiyatli yangilandi.";
     e.target.reset();

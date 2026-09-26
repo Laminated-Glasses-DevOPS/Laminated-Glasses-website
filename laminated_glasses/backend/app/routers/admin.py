@@ -349,8 +349,8 @@ def change_password(
     _admin=Depends(security.get_current_admin),
 ):
     settings = db.query(models.SiteSettings).first()
-    if not security.verify_password(payload.current_password, settings.password_hash):
-        raise HTTPException(status_code=400, detail="Joriy parol noto'g'ri.")
+    if settings is None:
+        raise HTTPException(status_code=404, detail="Sozlamalar topilmadi.")
 
     settings.password_hash = security.hash_password(payload.new_password)
     db.commit()
