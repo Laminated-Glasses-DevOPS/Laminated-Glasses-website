@@ -123,4 +123,31 @@ MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_MINUTES = 15
 
 CART_TTL_DAYS = int(os.getenv("CART_TTL_DAYS", "7"))
+
+# Konstruktor limiti: har bir Google akkaunt (Gmail) uchun shuncha soatda 1 marta.
+# Konstruktor vaqtinchalik ma'lumotlari (preview rasmlar) ham shuncha soatda
+# tozalanadi (cleanup.py) -- shu sababli ikkalasi bitta qiymatdan olinadi.
+CONSTRUCTOR_LIMIT_HOURS = max(1, int(os.getenv("CONSTRUCTOR_LIMIT_HOURS", "24")))
 MAX_CART_ITEM_QUANTITY = 99
+
+# ---------------------------------------------------------------------------
+# Google orqali kirish (OAuth 2.0 / Google Identity Services)
+# ---------------------------------------------------------------------------
+# MUHIM: Google "Client ID" MAXFIY KALIT EMAS -- u baribir brauzerda ko'rinadi
+# (Google tugmasi shu bilan ishlaydi). Uni backendda saqlashdan maqsad -- bitta
+# joyda (.env / Render env) boshqarish va, eng muhimi, serverning O'ZI Google
+# tokenidagi `aud` (qaysi ilova uchun berilgani)ni shu qiymatga solishtirib
+# tekshirishi: boshqa ilova uchun berilgan token bu yerda qabul qilinmaydi.
+# "Client Secret" bu oqimda umuman kerak emas -- uni hech qayerga yozmang.
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "535387790955-unh1vfogr38jfikfbltob6pvi8rtrgqn.apps.googleusercontent.com",
+).strip()
+
+# Mijoz (Google orqali kirgan foydalanuvchi) sessiya tokeni amal qilish muddati.
+CUSTOMER_TOKEN_EXPIRE_DAYS = int(os.getenv("CUSTOMER_TOKEN_EXPIRE_DAYS", "30"))
+
+# Google ID token faqat yaqinda (shu soniya ichida) berilgan bo'lsa qabul
+# qilinadi -- eskirgan/o'g'irlangan tokenni qayta ishlatish (replay) oynasini
+# qisqartiradi. Google tokeni o'zi 1 soat yashaydi.
+GOOGLE_TOKEN_MAX_AGE_SECONDS = int(os.getenv("GOOGLE_TOKEN_MAX_AGE_SECONDS", "600"))

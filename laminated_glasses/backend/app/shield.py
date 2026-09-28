@@ -106,7 +106,12 @@ def detect_xss(text: str) -> Optional[str]:
 # Bunday joylarda foydalanuvchi matn emas, balki binary/rasm content yuboradi
 # -- tasodifan honeypot naqshlariga (masalan "or ...=") mos kelib qolishi
 # mumkin, shuning uchun bular umuman skanerlanmasligi kerak.
-SKIP_BODY_SCAN_PREFIXES = ("/uploads", "/api/constructor/share")
+#
+# "/api/auth/" -- Google ID token (JWT) base64url matn: tasodifan "--" bilan
+# tugashi yoki boshqa naqshga mos kelishi mumkin, natijada haqiqiy mijoz
+# SQL Injection deb noto'g'ri bloklanardi. Token baribir imzo bo'yicha
+# serverda to'liq tekshiriladi (google_auth.py), matn sifatida ishlatilmaydi.
+SKIP_BODY_SCAN_PREFIXES = ("/uploads", "/api/constructor/share", "/api/auth/")
 
 
 def should_skip_scan(path: str) -> bool:

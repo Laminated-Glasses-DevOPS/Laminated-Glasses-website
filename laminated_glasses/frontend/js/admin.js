@@ -253,7 +253,7 @@ document.getElementById("productSearchAdmin").addEventListener("input", (e) => {
 });
 
 async function confirmDeleteProduct(product) {
-  if (!confirm(`"${product.name}" mahsulotini butunlay o'chirmoqchimisiz?`)) return;
+  if (!(await lgConfirm({ tone: "danger", title: "Mahsulotni o'chirish", message: `"${product.name}" mahsuloti butunlay o'chiriladi. Bu amalni bekor qilib bo'lmaydi.`, confirmText: "Ha, o'chirish" }))) return;
   try {
     await apiRequest(`/admin/products/${product.id}`, { method: "DELETE" });
     showToast("Mahsulot o'chirildi.");
@@ -413,7 +413,7 @@ function renderCategoryChips() {
       const id = Number(chip.dataset.id);
       const category = state.categories.find((c) => c.id === id);
       if (!category) return;
-      if (!confirm(`"${category.name}" kategoriyasini o'chirmoqchimisiz?`)) return;
+      if (!(await lgConfirm({ tone: "danger", title: "Kategoriyani o'chirish", message: `"${category.name}" kategoriyasi o'chiriladi.`, confirmText: "Ha, o'chirish" }))) return;
       try {
         await apiRequest(`/admin/categories/${id}`, { method: "DELETE" });
         showToast("Kategoriya o'chirildi.");
@@ -465,6 +465,7 @@ async function loadStats() {
     document.getElementById("statTotalRevenue").textContent = formatPrice(stats.total_potential_revenue);
     document.getElementById("statTotalProfit").textContent = formatPrice(stats.total_potential_profit);
     document.getElementById("statAvgMargin").textContent = `${stats.average_profit_margin_percent}%`;
+    document.getElementById("statTotalUsersMain").textContent = stats.total_users;
     document.getElementById("statTotalOrders").textContent = stats.total_orders;
     document.getElementById("statNewOrders").textContent = stats.new_orders;
     document.getElementById("statSoldOrders").textContent = stats.sold_orders;
@@ -481,6 +482,36 @@ async function loadStats() {
 
 /* ---------- Sozlamalar ---------- */
 
+/* --- Parol kuchi ko'rsatkichi --- */
+function passwordScore(pw) {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (/^\d+$/.test(pw) || new Set(pw).size < 4) score = Math.min(score, 1);
+  return Math.min(score, 4);
+}
+
+document.getElementById("newPassword")?.addEventListener("input", (e) => {
+  const score = e.target.value ? passwordScore(e.target.value) : 0;
+  const bar = document.getElementById("pwMeterBar");
+  const hint = document.getElementById("pwHint");
+  const labels = ["Juda zaif", "Zaif", "O'rtacha", "Yaxshi", "A'lo"];
+  const colors = ["#c0392b", "#d9622b", "#e0983a", "#4a9d6a", "#1f8a4c"];
+  bar.style.width = e.target.value ? `${(score + 1) * 20}%` : "0";
+  bar.style.background = colors[score];
+  hint.textContent = e.target.value ? `Parol kuchi: ${labels[score]}` : "Kuchli parol: uzun, harf + raqam + belgi aralash.";
+});
+
+document.getElementById("pwToggle")?.addEventListener("click", (e) => {
+  const inputs = [document.getElementById("newPassword"), document.getElementById("confirmPassword")];
+  const show = inputs[0].type === "password";
+  inputs.forEach((i) => { i.type = show ? "text" : "password"; });
+  e.target.textContent = show ? "Yashirish" : "Ko'rsatish";
+});
+
 document.getElementById("changePasswordForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById("passwordError");
@@ -488,6 +519,7 @@ document.getElementById("changePasswordForm").addEventListener("submit", async (
   errorEl.textContent = "";
   successEl.textContent = "";
 
+  const current = document.getElementById("currentPassword").value;
   const next = document.getElementById("newPassword").value;
   const confirmVal = document.getElementById("confirmPassword").value;
 
@@ -495,17 +527,59 @@ document.getElementById("changePasswordForm").addEventListener("submit", async (
     errorEl.textContent = "Yangi parollar bir xil emas.";
     return;
   }
+  if (passwordScore(next) < 2) {
+    const go = await lgConfirm({
+      tone: "warning",
+      title: "Parol zaif",
+      message: "Bu parolni taxmin qilish oson. Baribir shuni saqlaymizmi?",
+      confirmText: "Ha, saqlash",
+      cancelText: "Kuchliroq yozaman",
+    });
+    if (!go) return;
+  }
 
   try {
-    await apiRequest("/admin/settings/password", {
+    const res = await apiRequest("/admin/settings/password", {
       method: "PUT",
-      body: JSON.stringify({ new_password: next }),
+      body: JSON.stringify({ current_password: current, new_password: next }),
     });
+    // Parol o'zgargach eski token yaroqsiz -- serverdan kelgan yangisini saqlaymiz.
+    if (res && res.access_token) {
+      state.token = res.access_token;
+      localStorage.setItem(TOKEN_KEY, state.token);
+    }
     successEl.textContent = "Parol muvaffaqiyatli yangilandi.";
     e.target.reset();
+    document.getElementById("pwMeterBar").style.width = "0";
+    await lgAlert({ tone: "success", title: "Parol yangilandi", message: "Boshqa qurilmalardagi admin sessiyalari tugatildi." });
   } catch (err) {
     errorEl.textContent = err.message;
   }
+});
+
+document.getElementById("siteForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById("siteError");
+  const successEl = document.getElementById("siteSuccess");
+  errorEl.textContent = "";
+  successEl.textContent = "";
+  try {
+    const out = await apiRequest("/admin/settings/site", {
+      method: "PUT",
+      body: JSON.stringify({ site_title: document.getElementById("siteTitleInput").value }),
+    });
+    document.getElementById("siteTitleInput").value = out.site_title;
+    successEl.textContent = "Sayt nomi yangilandi.";
+  } catch (err) {
+    errorEl.textContent = err.message;
+  }
+});
+
+document.getElementById("logoutAdminBtn")?.addEventListener("click", async () => {
+  const ok = await lgConfirm({ title: "Chiqish", message: "Admin paneldan chiqasizmi?", confirmText: "Ha, chiqish" });
+  if (!ok) return;
+  localStorage.removeItem(TOKEN_KEY);
+  location.reload();
 });
 
 document.getElementById("telegramForm").addEventListener("submit", async (e) => {
@@ -528,10 +602,28 @@ document.getElementById("telegramForm").addEventListener("submit", async (e) => 
   }
 });
 
+async function loadSecurityStatus() {
+  const holder = document.getElementById("securityChecks");
+  if (!holder) return;
+  try {
+    const { checks } = await apiRequest("/admin/settings/security-status");
+    holder.innerHTML = checks
+      .map(
+        (c) => `<li class="sec-item ${c.ok ? "ok" : "warn"}"><span class="sec-dot">${c.ok ? "✓" : "!"}</span><span><strong>${escapeHtml(c.label)}</strong><small>${escapeHtml(c.detail)}</small></span></li>`
+      )
+      .join("");
+  } catch (err) {
+    holder.innerHTML = `<li class="sec-item warn">${escapeHtml(err.message)}</li>`;
+  }
+}
+
 async function loadCurrentTelegram() {
+  loadSecurityStatus();
   try {
     const contact = await apiRequest("/admin/settings/telegram");
     document.getElementById("telegramUsername").value = contact.telegram_username;
+    const siteInput = document.getElementById("siteTitleInput");
+    if (siteInput) siteInput.value = contact.site_title || "";
   } catch (err) {
     console.error(err);
   }
@@ -638,11 +730,11 @@ function renderOrders() {
   });
 
   list.querySelectorAll("[data-cancel]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = Number(btn.dataset.cancel);
       const input = list.querySelector(`[data-note="${id}"]`);
       const note = input && input.value.trim() ? input.value.trim() : "Bekor qilindi.";
-      if (!confirm("Buyurtma bekor qilinsinmi?")) return;
+      if (!(await lgConfirm({ tone: "warning", title: "Buyurtmani bekor qilish", message: "Buyurtma bekor qilingan deb belgilanadi.", confirmText: "Ha, bekor qilish", cancelText: "Orqaga" }))) return;
       setOrderStatus(id, "cancelled", note);
     });
   });
@@ -653,7 +745,7 @@ function renderOrders() {
 
   list.querySelectorAll("[data-delete]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Buyurtma tarixdan butunlay o'chirilsinmi?")) return;
+      if (!(await lgConfirm({ tone: "danger", title: "Buyurtmani o'chirish", message: "Buyurtma tarixdan butunlay o'chiriladi.", confirmText: "Ha, o'chirish" }))) return;
       try {
         await apiRequest(`/admin/orders/${Number(btn.dataset.delete)}`, { method: "DELETE" });
         showToast("Buyurtma o'chirildi.");
@@ -720,7 +812,7 @@ function renderVisitsChart(daily) {
       const trunkHeight = Math.round((d.unique_visitors / maxValue) * maxBarHeight);
       const isToday = d.date === todayIso;
       return `
-        <div class="visit-bar-col${isToday ? " visit-bar-today" : ""}" title="${d.label}: ${d.unique_visitors} ta noyob tashrif">
+        <div class="visit-bar-col${isToday ? " visit-bar-today" : ""}" title="${d.label}: ${d.unique_visitors} ta noyob tashrif (kirgan: ${d.user_visitors}, mehmon: ${d.guest_visitors}) · yangi foydalanuvchi: ${d.new_users}">
           <div class="visit-bar-count">${d.unique_visitors}</div>
           <div class="visit-bar-canopy${d.unique_visitors === 0 ? " zero" : ""}"></div>
           <div class="visit-bar-trunk" style="height:${Math.max(trunkHeight, 4)}px;"></div>
@@ -731,14 +823,52 @@ function renderVisitsChart(daily) {
     .join("");
 }
 
+function renderRecentUsers(users) {
+  const box = document.getElementById("recentUsers");
+  if (!box) return;
+  if (!users || users.length === 0) {
+    box.innerHTML = `<p class="sub">Hozircha Google orqali kirgan foydalanuvchi yo'q.</p>`;
+    return;
+  }
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString("uz-UZ", { dateStyle: "short", timeStyle: "short" }) : "—");
+  box.innerHTML = users
+    .map((u) => {
+      const initial = escapeHtml((u.name || "?").trim().charAt(0).toUpperCase());
+      const avatar = u.picture_url
+        ? `<img src="${escapeHtml(u.picture_url)}" alt="" referrerpolicy="no-referrer" loading="lazy" />`
+        : initial;
+      return `
+        <div class="recent-user">
+          <span class="recent-user-avatar">${avatar}</span>
+          <div class="recent-user-info">
+            <strong>${escapeHtml(u.name)}</strong>
+            <span>${escapeHtml(u.email || "")}</span>
+          </div>
+          <div class="recent-user-meta">
+            <span>${u.login_count} marta kirgan</span>
+            <span>Oxirgi: ${fmt(u.last_login_at)}</span>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
 async function loadAnalytics() {
   try {
     const data = await apiRequest("/admin/analytics?days=14");
-    document.getElementById("statTodayVisitors").textContent = data.today_visitors;
-    document.getElementById("statYesterdayVisitors").textContent = data.yesterday_visitors;
-    document.getElementById("statTotalDevices").textContent = data.total_unique_devices;
-    document.getElementById("statTotalViews").textContent = data.total_views;
+    const set = (id, value) => { const n = document.getElementById(id); if (n) n.textContent = value; };
+    set("statTodayVisitors", data.today_visitors);
+    set("statTodaySplit", `${data.today_users} / ${data.today_guests}`);
+    set("statYesterdayVisitors", data.yesterday_visitors);
+    set("statTotalDevices", data.total_unique_visitors);
+    set("statTotalViews", data.total_views);
+    set("statTotalUsers", data.total_users);
+    set("statNewUsersToday", data.new_users_today);
+    set("statNewUsersYesterday", data.new_users_yesterday);
+    set("statNewUsers7d", data.new_users_7d);
+    set("statActiveUsers7d", data.active_users_7d);
     renderVisitsChart(data.daily);
+    renderRecentUsers(data.recent_users);
   } catch (err) {
     showToast(err.message, true);
   }
@@ -794,7 +924,7 @@ document.getElementById('newsForm')?.addEventListener('submit',async e=>{
 ['closeNewsFormBtn','cancelNewsFormBtn'].forEach(id=>document.getElementById(id)?.addEventListener('click',closeNewsForm));
 document.getElementById('newsFormOverlay')?.addEventListener('click',e=>{if(e.target.id==='newsFormOverlay')closeNewsForm();});
 document.getElementById('addNewsBtn')?.addEventListener('click',()=>editNews());
-document.getElementById('adminNewsList')?.addEventListener('click',async e=>{const edit=e.target.closest('[data-edit-news]'),del=e.target.closest('[data-del-news]');try{if(edit)await editNews(Number(edit.dataset.editNews));if(del&&confirm('Yangilikni o‘chirasizmi?')){await apiRequest(`/admin/news/${del.dataset.delNews}`,{method:'DELETE'});loadAdminNews();}}catch(err){showToast(err.message,true);}});
+document.getElementById('adminNewsList')?.addEventListener('click',async e=>{const edit=e.target.closest('[data-edit-news]'),del=e.target.closest('[data-del-news]');try{if(edit)await editNews(Number(edit.dataset.editNews));if(del&&await lgConfirm({tone:'danger',title:'Yangilikni o‘chirish',message:'Yangilik butunlay o‘chiriladi.',confirmText:'Ha, o‘chirish'})){await apiRequest(`/admin/news/${del.dataset.delNews}`,{method:'DELETE'});loadAdminNews();}}catch(err){showToast(err.message,true);}});
 document.getElementById('sideNav')?.addEventListener('click',e=>{if(e.target.closest('[data-view="news"]')){loadAdminNews();loadSiteLinks();}});
 async function loadSiteLinks(){try{const d=await apiRequest('/admin/site-links');({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}&&Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}).forEach(([k,id])=>document.getElementById(id).value=d[k]||''));}catch(e){showToast(e.message,true);}}
 document.getElementById('siteLinksForm')?.addEventListener('submit',async e=>{e.preventDefault();try{for(const [k,id] of Object.entries({instagram:'linkInstagram',telegram:'linkTelegram',youtube:'linkYoutube',phone:'linkPhone',address:'linkAddress',email:'linkEmail'}))await apiRequest(`/admin/site-links/${k}`,{method:'PUT',body:JSON.stringify({value:document.getElementById(id).value.trim()})});showToast('Aloqa ma’lumotlari saqlandi');}catch(err){showToast(err.message,true);}});
@@ -1004,8 +1134,8 @@ document.getElementById('securityIpList')?.addEventListener('click', (e) => {
 
   const cancelBtn = e.target.closest('[data-cancel-honeypot-msg]');
   if (cancelBtn) {
-    if (!confirm('Bu xabarni bekor qilasizmi? Hujumchi endi standart javobni ko\'radi.')) return;
     (async () => {
+      if (!(await lgConfirm({ tone: 'warning', title: 'Xabarni bekor qilish', message: 'Hujumchi endi standart javobni ko\'radi.', confirmText: 'Ha, bekor qilish', cancelText: 'Orqaga' }))) return;
       try {
         await apiRequest(`/admin/security/messages/${cancelBtn.dataset.cancelHoneypotMsg}`, { method: 'DELETE' });
         showToast('Xabar bekor qilindi.');
@@ -1043,7 +1173,7 @@ document.getElementById('securityIpList')?.addEventListener('keydown', (e) => {
 });
 
 document.getElementById('clearSecurityLogsBtn')?.addEventListener('click', async () => {
-  if (!confirm('Xavfsizlik jurnalidagi barcha yozuvlar butunlay o\'chiriladi. Davom etasizmi?')) return;
+  if (!(await lgConfirm({ tone: 'danger', title: 'Jurnalni tozalash', message: 'Xavfsizlik jurnalidagi barcha yozuvlar butunlay o\'chiriladi.', confirmText: 'Ha, tozalash' }))) return;
   try {
     const res = await apiRequest('/admin/security-events', { method: 'DELETE' });
     showToast(`${res.deleted} ta yozuv o'chirildi.`);
@@ -1225,7 +1355,7 @@ function renderConstructorSizesTable() {
       const id = Number(e.target.closest('tr').dataset.id);
       const size = state.constructorSizes.find((s) => s.id === id);
       if (!size) return;
-      if (!confirm(`"${size.label}" o'lchamini o'chirasizmi?`)) return;
+      if (!(await lgConfirm({ tone: "danger", title: "O'lchamni o'chirish", message: `"${size.label}" o'lchami o'chiriladi.`, confirmText: "Ha, o'chirish" }))) return;
       try {
         await apiRequest(`/admin/constructor/sizes/${id}`, { method: 'DELETE' });
         await loadConstructorSizes();
@@ -1552,10 +1682,7 @@ document.getElementById("restoreDbForm")?.addEventListener("submit", async (e) =
   const file = fileInput.files[0];
   if (!file) return;
 
-  const confirmed = window.confirm(
-    "DIQQAT: joriy bazadagi BARCHA mahsulot, buyurtma va sozlamalar yuklangan fayl bilan ALMASHTIRILADI. " +
-      "Bu amalni bekor qilib bo'lmaydi (faqat avtomatik zaxiradan qo'lda tiklash mumkin). Davom etasizmi?"
-  );
+  const confirmed = await lgConfirm({ tone: "danger", title: "Bazani tiklash", message: "Joriy bazadagi BARCHA mahsulot, buyurtma va sozlamalar yuklangan fayl bilan ALMASHTIRILADI. Bekor qilib bo'lmaydi (faqat avtomatik zaxiradan qo'lda tiklash mumkin).", confirmText: "Ha, tiklash" });
   if (!confirmed) return;
 
   const btn = document.getElementById("restoreDbBtn");
@@ -1611,11 +1738,7 @@ document.getElementById("restoreConfigBundleForm")?.addEventListener("submit", a
   const file = fileInput.files[0];
   if (!file) return;
 
-  const confirmed = window.confirm(
-    "DIQQAT: zip ichidagi HAR BIR MAVJUD bo'lim (rasmlar, mahsulotlar, constructor sozlamalari, " +
-      "parol, statistika) joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan bo'limlar tegilmaydi. " +
-      "Davom etasizmi?"
-  );
+  const confirmed = await lgConfirm({ tone: "danger", title: "To'plamni qo'llash", message: "Zip ichidagi har bir mavjud bo'lim (rasmlar, mahsulotlar, konstruktor sozlamalari, parol, statistika, foydalanuvchilar) joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan bo'limlar tegilmaydi.", confirmText: "Ha, qo'llash" });
   if (!confirmed) return;
 
   const btn = document.getElementById("restoreConfigBundleBtn");

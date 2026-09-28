@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dialogs.css" />
 <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body class="admin-body">
@@ -279,6 +280,7 @@
         <div class="stat-card"><span>Umumiy sotish summasi</span><strong id="statTotalRevenue">—</strong></div>
         <div class="stat-card profit"><span>Umumiy sof foyda</span><strong id="statTotalProfit">—</strong></div>
         <div class="stat-card"><span>O'rtacha foyda foizi</span><strong id="statAvgMargin">—</strong></div>
+        <div class="stat-card"><span>Jami foydalanuvchilar (Google)</span><strong id="statTotalUsersMain">—</strong></div>
         <div class="stat-card"><span>Jami buyurtmalar</span><strong id="statTotalOrders">—</strong></div>
         <div class="stat-card"><span>Yangi buyurtmalar</span><strong id="statNewOrders">—</strong></div>
         <div class="stat-card"><span>Sotilgan buyurtmalar</span><strong id="statSoldOrders">—</strong></div>
@@ -292,24 +294,40 @@
       <div class="dash-topbar">
         <div>
           <h2>Analitika</h2>
-          <p>Saytga bir kunda nechta odam kirganini ko'rsatadi. Bitta qurilma bir kunda necha marta kirsa ham — 1 ta ko'rish (view) hisoblanadi.</p>
+          <p>Haqiqiy tashriflar va foydalanuvchilar. Bir odam bir kunda necha marta yoki qaysi qurilmadan kirmasin — 1 ta hisoblanadi (Google orqali kirganlar akkaunt bo'yicha, mehmonlar qurilma bo'yicha).</p>
         </div>
         <button class="btn btn-ghost btn-sm" id="refreshAnalyticsBtn">Yangilash</button>
       </div>
 
+      <h3 class="analytics-subtitle">Foydalanuvchilar (Google orqali kirganlar)</h3>
+      <div class="stat-grid">
+        <div class="stat-card profit"><span>Jami foydalanuvchilar</span><strong id="statTotalUsers">—</strong></div>
+        <div class="stat-card"><span>Bugun ro'yxatdan o'tdi</span><strong id="statNewUsersToday">—</strong></div>
+        <div class="stat-card"><span>Kecha ro'yxatdan o'tdi</span><strong id="statNewUsersYesterday">—</strong></div>
+        <div class="stat-card"><span>Oxirgi 7 kunda yangi</span><strong id="statNewUsers7d">—</strong></div>
+        <div class="stat-card"><span>Oxirgi 7 kunda faol</span><strong id="statActiveUsers7d">—</strong></div>
+      </div>
+
+      <h3 class="analytics-subtitle">Tashriflar (noyob odamlar)</h3>
       <div class="stat-grid">
         <div class="stat-card"><span>Bugungi tashriflar</span><strong id="statTodayVisitors">—</strong></div>
+        <div class="stat-card"><span>Shundan kirganlar / mehmonlar</span><strong id="statTodaySplit">—</strong></div>
         <div class="stat-card"><span>Kechagi tashriflar</span><strong id="statYesterdayVisitors">—</strong></div>
-        <div class="stat-card"><span>Jami noyob qurilmalar</span><strong id="statTotalDevices">—</strong></div>
-        <div class="stat-card"><span>Jami ko'rishlar (barcha kunlar)</span><strong id="statTotalViews">—</strong></div>
+        <div class="stat-card"><span>Jami noyob tashrifchilar</span><strong id="statTotalDevices">—</strong></div>
+        <div class="stat-card"><span>Jami ko'rishlar (odam × kun)</span><strong id="statTotalViews">—</strong></div>
       </div>
 
       <div class="table-card" style="padding:26px 24px 18px;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
           <h3 style="margin:0;font-family:var(--font-head);font-size:1.05rem;color:var(--navy);">Kunlik tashriflar daraxti</h3>
-          <p style="margin:0;font-size:0.8rem;color:var(--navy-soft);">Har bir ustun — bir kun ichidagi noyob qurilmalar soni.</p>
+          <p style="margin:0;font-size:0.8rem;color:var(--navy-soft);">Har bir ustun — bir kun ichidagi noyob odamlar soni (ustiga olib borsangiz: kirgan / mehmon / yangi).</p>
         </div>
         <div id="visitsChart" class="visits-chart"></div>
+      </div>
+
+      <div class="table-card" style="padding:22px 24px;margin-top:20px;">
+        <h3 style="margin:0 0 12px;font-family:var(--font-head);font-size:1.05rem;color:var(--navy);">So'nggi foydalanuvchilar</h3>
+        <div id="recentUsers" class="recent-users"><p class="sub">Yuklanmoqda...</p></div>
       </div>
     </section>
 
@@ -460,8 +478,10 @@
           <h3>Konfiguratsiya to'plami (.zip)</h3>
           <p class="sub">
             Mahsulot rasmlari, mahsulotlar (nomi/tavsifi), constructor
-            o'lchamlari, admin paroli va statistika/attack loglarini BITTA
-            .zip fayl ichida, alohida bo'limlar sifatida yuklab oling.
+            o'lchamlari, admin paroli, statistika/attack loglari va
+            Google orqali kirgan FOYDALANUVCHILAR (ism, email, kirishlar soni)
+            ni BITTA .zip fayl ichida, alohida bo'limlar sifatida yuklab oling.
+            Foydalanuvchilar <code>foydalanuvchilar.db</code> faylida bo'ladi.
           </p>
           <button class="btn btn-primary" id="downloadConfigBundleBtn">To'plamni yuklab olish (.zip)</button>
         </div>
@@ -469,7 +489,7 @@
           <h3>Konfiguratsiya to'plamini qayta yuklash</h3>
           <div class="db-restore-warning">
             <strong>Diqqat:</strong> zip ichida qaysi bo'lim (rasmlar,
-            mahsulotlar, constructor sozlamalari, parol, statistika) bo'lsa,
+            mahsulotlar, constructor sozlamalari, parol, statistika, foydalanuvchilar) bo'lsa,
             o'sha bo'lim joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan
             bo'limlar tegilmasdan qoladi. Almashtirishdan oldin joriy baza
             avtomatik zaxiralanadi.
@@ -501,26 +521,49 @@
       <div class="dash-topbar">
         <div>
           <h2>Sozlamalar</h2>
-          <p>Admin parolini va mijozlar bilan bog'lanish uchun Telegram usernameni o'zgartiring.</p>
+          <p>Admin parolini, sayt nomini va mijozlar bilan bog'lanish uchun Telegram usernameni boshqaring.</p>
         </div>
       </div>
 
       <div class="settings-grid">
         <div class="settings-card">
           <h3>Parolni o'zgartirish</h3>
-          <p class="sub">Xavfsizlik uchun standart parolni (7719) birinchi kirishdayoq almashtirish tavsiya etiladi.</p>
-          <form id="changePasswordForm">
+          <p class="sub">Kamida 8 belgi, faqat raqamlardan iborat bo'lmasin. Parol almashgach boshqa qurilmalardagi admin sessiyalari avtomatik tugaydi.</p>
+          <form id="changePasswordForm" autocomplete="off">
+            <div class="field">
+              <label for="currentPassword">Joriy parol</label>
+              <input type="password" id="currentPassword" autocomplete="current-password" required />
+            </div>
             <div class="field">
               <label for="newPassword">Yangi parol</label>
-              <input type="password" id="newPassword" minlength="4" required />
+              <div class="pw-wrap">
+                <input type="password" id="newPassword" minlength="8" autocomplete="new-password" required />
+                <button type="button" class="pw-toggle" id="pwToggle" aria-label="Parolni ko'rsatish">Ko'rsatish</button>
+              </div>
+              <div class="pw-meter" aria-hidden="true"><span id="pwMeterBar"></span></div>
+              <small class="pw-hint" id="pwHint">Kuchli parol: uzun, harf + raqam + belgi aralash.</small>
             </div>
             <div class="field">
               <label for="confirmPassword">Yangi parolni tasdiqlang</label>
-              <input type="password" id="confirmPassword" minlength="4" required />
+              <input type="password" id="confirmPassword" minlength="8" autocomplete="new-password" required />
             </div>
             <button type="submit" class="btn btn-primary">Parolni saqlash</button>
             <div class="field-error" id="passwordError"></div>
             <div class="settings-success" id="passwordSuccess"></div>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>Sayt nomi</h3>
+          <p class="sub">Sayt sarlavhasi va brauzer tabida ko'rinadigan nom.</p>
+          <form id="siteForm">
+            <div class="field">
+              <label for="siteTitleInput">Nomi</label>
+              <input type="text" id="siteTitleInput" maxlength="200" placeholder="Laminated Glasses" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Saqlash</button>
+            <div class="field-error" id="siteError"></div>
+            <div class="settings-success" id="siteSuccess"></div>
           </form>
         </div>
 
@@ -536,6 +579,13 @@
             <div class="field-error" id="telegramError"></div>
             <div class="settings-success" id="telegramSuccess"></div>
           </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>Xavfsizlik holati</h3>
+          <p class="sub">Serverning joriy himoya sozlamalari (faqat ko'rish uchun).</p>
+          <ul class="sec-list" id="securityChecks"><li class="sec-item">Yuklanmoqda…</li></ul>
+          <button type="button" class="btn btn-ghost" id="logoutAdminBtn" style="margin-top:14px">Admin paneldan chiqish</button>
         </div>
       </div>
     </section>
@@ -621,6 +671,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="/js/dialogs.js"></script>
 <script src="/js/admin.js"></script>
 </body>
 </html>

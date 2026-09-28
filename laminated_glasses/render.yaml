@@ -46,3 +46,7 @@ services:
         value: "Laminated Glasses"
       - key: CART_TTL_DAYS
         value: "7"
+      - key: GOOGLE_CLIENT_ID
+        value: "535387790955-unh1vfogr38jfikfbltob6pvi8rtrgqn.apps.googleusercontent.com"
+      - key: CUSTOMER_TOKEN_EXPIRE_DAYS
+        value: "30"

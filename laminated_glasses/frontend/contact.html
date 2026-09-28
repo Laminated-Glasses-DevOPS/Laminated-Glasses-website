@@ -10,11 +10,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dialogs.css" />
 </head>
 <body>
 
-<!-- Ism so'raydigan oyna. Sayt ochilganda EMAS, foydalanuvchi birinchi marta
-     "Savatga" tugmasini bosganda ochiladi va faqat bir marotaba ko'rinadi. -->
+<!-- Google orqali kirish oynasi. Sayt ochilganda EMAS, foydalanuvchi
+     "Savatga" tugmasini bosganda (kirmagan bo'lsa) ochiladi. -->
 <div class="gate" id="gate">
   <div class="gate-card">
     <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -24,14 +25,12 @@
         <stop stop-color="#8CC4E8"/><stop offset="1" stop-color="#12557F"/>
       </linearGradient></defs>
     </svg>
-    <h1>Yana bitta qadam qoldi</h1>
-    <p>Mahsulot savatga qo'shilishidan oldin ismingizni so'raymiz — buyurtmangiz shu ism bilan qayd qilinadi va sotuvchi sizni aynan shu ism orqali topadi. Ism faqat shu bir marta so'raladi va keyin o'zgartirilmaydi.</p>
-    <form id="gateForm" novalidate>
-      <input type="text" id="gateName" class="gate-input" placeholder="Masalan: Aziz Karimov" maxlength="120" autocomplete="name" />
-      <div class="gate-error" id="gateError"></div>
-      <button type="submit" class="btn btn-primary btn-block" id="gateBtn">Davom etish</button>
-    </form>
-    <p class="gate-note">Telefon raqami yoki parol so'ralmaydi. Ismingiz brauzeringizga bog'lanadi: shu qurilmadan qayta kirsangiz, sayt sizni o'zi taniydi va ism qayta so'ralmaydi.</p>
+    <h1>Google orqali kiring</h1>
+    <p>Mahsulotni savatga qo'shish uchun Google akkauntingiz bilan kiring. Buyurtmangiz Gmail akkauntingizdagi ism bilan qayd qilinadi va savatingiz istalgan qurilmada saqlanib turadi.</p>
+    <div class="gate-google" id="googleBtn" aria-live="polite"></div>
+    <div class="gate-error" id="gateError" role="alert"></div>
+    <button type="button" class="gate-cancel" id="gateCancel">Hozircha kerak emas</button>
+    <p class="gate-note">Faqat ismingiz, emailingiz va profil rasmingiz olinadi — parolingiz saytga hech qachon yetib kelmaydi. Bitta Google akkaunt = bitta foydalanuvchi: qayta kirsangiz, yangi yozuv ochilmaydi.</p>
   </div>
 </div>
 
@@ -54,7 +53,7 @@
       <button class="menu-toggle" id="menuToggle" aria-label="Menyuni ochish" aria-expanded="false" aria-controls="mobileNav">
         <span></span><span></span><span></span>
       </button>
-      <button class="user-chip static" id="userChip" title="Ismingiz" tabindex="-1">
+      <button class="user-chip" id="userChip" hidden title="Chiqish uchun bosing" tabindex="0">
         <span class="avatar" id="userInitial">?</span>
         <span class="name" id="userName">Mehmon</span>
       </button>
@@ -185,7 +184,7 @@
       <div class="step">
         <b>2</b>
         <h3>Savatga soling</h3>
-        <p>"Savatga" tugmasini birinchi bosganingizda ismingiz so'raladi — bu faqat bir marta bo'ladi va keyin qayta so'ralmaydi. Savat 7 kun davomida saqlanadi.</p>
+        <p>"Savatga" tugmasini birinchi bosganingizda Gmail (Google) akkauntingizni tanlaysiz — ismingiz Gmail akkauntingizdan avtomatik olinadi, alohida yozib o'tirmaysiz. Savat 7 kun davomida saqlanadi.</p>
       </div>
       <div class="step">
         <b>3</b>
@@ -218,7 +217,7 @@
       <article class="news-card">
         <span class="news-date">E'lon</span>
         <h3>Buyurtma jarayoni soddalashtirildi</h3>
-        <p>Endi saytga kirishda ism so'ralmaydi — faqat "Savatga" tugmasi bosilganda va faqat bir marta so'raladi.</p>
+        <p>Saytga kirishda ism so'ralmaydi — "Savatga" tugmasi bosilganda Gmail akkauntingizni tanlaysiz, ism esa undan avtomatik olinadi.</p>
       </article>
       <article class="news-card">
         <span class="news-date">Maslahat</span>
@@ -239,12 +238,12 @@
     </div>
     <div class="rule-grid">
       <div class="rule">
-        <h3>Ism — yagona talab</h3>
-        <p>Parol, telefon raqami yoki pochta so'ralmaydi. Saytga kirganingizda hech narsa so'ralmaydi — ism faqat "Savatga" tugmasi birinchi bosilganda so'raladi, chunki buyurtma shu ism bilan qayd qilinadi.</p>
+        <h3>Google akkaunt va ism</h3>
+        <p>Saytga kirganingizda hech narsa so'ralmaydi. "Savatga" yoki konstruktordan foydalanishda Gmail (Google) akkauntingiz orqali kirasiz — ismingiz va emailingiz Gmail'dan avtomatik olinadi, buyurtma shu ism bilan qayd qilinadi. Parolingiz saytga hech qachon yetib kelmaydi.</p>
       </div>
       <div class="rule">
-        <h3>Ism bir marotaba so'raladi va o'zgartirilmaydi</h3>
-        <p>Ismingiz brauzeringizdagi maxsus belgi bilan bazaga bir marta bog'lanadi va keyin o'zgartirib bo'lmaydi. Shu qurilmadan qayta kirsangiz, ism qaytadan so'ralmaydi. Boshqa telefon yoki brauzerdan kirsangiz — u yerda bir marta yana so'raladi.</p>
+        <h3>Ismni profilingizdan o'zgartirishingiz mumkin</h3>
+        <p>Ism alohida so'ralmaydi — u Gmail akkauntingizdan avtomatik olinadi. Xohlasangiz, uni yuqoridagi profil tugmasi orqali o'zgartirishingiz mumkin. Email esa Google akkauntingizdan olinadi va o'zgartirilmaydi.</p>
       </div>
       <div class="rule highlight">
         <h3>Savat 7 kun turadi</h3>
@@ -355,6 +354,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="/js/dialogs.js"></script>
 <script src="/js/main.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded",()=>{

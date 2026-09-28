@@ -14,6 +14,10 @@ o'sha bo'lim xatosiz o'tkazib yuboriladi):
     statistics.db                  -- security_events (attack IP'lari,
                                        XSS/SQLi urinishlari) + visit_logs
                                        (tashriflar statistikasi)
+    foydalanuvchilar.db            -- customers jadvali: Google orqali kirgan
+                                       foydalanuvchilar (google_sub, ism,
+                                       email, rasm, kirishlar soni, oxirgi
+                                       kirish vaqti va h.k.)
 
 MUHIM: bular ALOHIDA, mustaqil SQLite fayllar -- asosiy
 `laminated_glasses.db` ning bo'lagi emas, balki undan ANIQ shu jadvallar
@@ -55,7 +59,7 @@ from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
 
-from . import config, db_admin
+from . import config, db_admin, migrations
 from .database import Base, engine
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -70,6 +74,7 @@ BUNDLE_TABLES: Dict[str, List[str]] = {
     "admin_constructor_settings.db": ["constructor_sizes"],
     "admin_password.db": ["site_settings"],
     "statistics.db": ["security_events", "visit_logs"],
+    "foydalanuvchilar.db": ["customers"],
 }
 
 
@@ -182,18 +187,44 @@ def _validate_section_file(path: Path, tables: List[str]) -> None:
         )
 
 
+def _columns(conn: sqlite3.Connection, schema: str, table: str) -> List[str]:
+    return [row[1] for row in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+
+
 def _merge_section(section_db_path: Path, tables: List[str]) -> None:
     """`section_db_path` ichidagi jadvallarni asosiy bazaga TO'LIQ
     ALMASHTIRIB qo'shadi: har bir jadvalning eski qatorlari o'chiriladi,
-    so'ng fayldagi qatorlar bilan to'ldiriladi."""
+    so'ng fayldagi qatorlar bilan to'ldiriladi.
+
+    Ustunlar TARTIBI bo'yicha emas, NOMI bo'yicha (umumiy ustunlar) ko'chiriladi
+    -- shu tufayli eski versiyada olingan zip (masalan Google ustunlari hali
+    yo'q `customers`) ham xatosiz tiklanadi: yetishmagan ustunlar bazadagi
+    DEFAULT qiymatini oladi."""
     main_path = _main_db_path()
     conn = sqlite3.connect(str(main_path))
     try:
         conn.execute("ATTACH DATABASE ? AS part", (str(section_db_path),))
         conn.execute("BEGIN")
         for table in tables:
+            main_cols = _columns(conn, "main", table)
+            part_cols = set(_columns(conn, "part", table))
+            common = [c for c in main_cols if c in part_cols]
+            if not common:
+                raise ValueError(f"'{table}' jadvalida umumiy ustun topilmadi")
+            cols_sql = ", ".join(f'"{c}"' for c in common)
             conn.execute(f"DELETE FROM {table}")
-            conn.execute(f"INSERT INTO {table} SELECT * FROM part.{table}")
+            conn.execute(
+                f"INSERT INTO {table} ({cols_sql}) SELECT {cols_sql} FROM part.{table}"
+            )
+            if table == "customers":
+                # Mijozlar almashtirilgach, endi mavjud bo'lmagan mijozga
+                # tegishli "yetim" savat qatorlari qolmasin.
+                conn.execute(
+                    "DELETE FROM cart_items WHERE customer_id NOT IN (SELECT id FROM customers)"
+                )
+                # Konstruktor limiti mijoz ID'siga bog'liq: ID'lar boshqa odamga
+                # tegib qolib, begona akkauntni bloklab qo'ymasligi uchun.
+                conn.execute("DELETE FROM constructor_usage")
         conn.commit()
         conn.execute("DETACH DATABASE part")
     except Exception:
@@ -275,19 +306,7 @@ def import_config_bundle(uploaded_zip_path: Path) -> dict:
                 # Forward-compatible migratsiyalar (db_admin.restore_database
                 # bilan bir xil mantiq) -- yuklangan bo'lim eski versiyada
                 # yaratilgan bo'lishi mumkin.
-                with engine.begin() as conn:
-                    try:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'"
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE constructor_sizes ADD COLUMN pane_count INTEGER NOT NULL DEFAULT 1"
-                        )
-                    except Exception:
-                        pass
+                migrations.run_migrations(engine)
                 Base.metadata.create_all(bind=engine)
             except Exception as exc:
                 if snapshot_name:

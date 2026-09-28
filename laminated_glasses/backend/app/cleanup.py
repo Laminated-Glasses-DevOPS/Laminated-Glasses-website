@@ -21,13 +21,14 @@ intervalida cheksiz tsiklda uxlab-ishlab turadi.
 import asyncio
 import logging
 
-from . import backup, models, utils
+from . import backup, config, models, utils
 from .database import SessionLocal
 
 logger = logging.getLogger("cleanup")
 
 SECURITY_LOG_INTERVAL_SECONDS = 24 * 3600
-CONSTRUCTOR_PREVIEW_INTERVAL_SECONDS = 24 * 3600
+# Konstruktor limiti bilan bir xil soat (config.CONSTRUCTOR_LIMIT_HOURS).
+CONSTRUCTOR_PREVIEW_INTERVAL_SECONDS = config.CONSTRUCTOR_LIMIT_HOURS * 3600
 NEWS_INTERVAL_SECONDS = 48 * 3600
 ORDERS_INTERVAL_SECONDS = 48 * 3600
 
@@ -65,7 +66,31 @@ def purge_constructor_previews() -> int:
                     count += 1
                 except OSError:
                     pass
+    count += purge_constructor_usage()
     return count
+
+
+def purge_constructor_usage() -> int:
+    """Limit oynasi (config.CONSTRUCTOR_LIMIT_HOURS) o'tib bo'lgan konstruktor
+    foydalanish yozuvlarini o'chiradi. Faol (hali muddati o'tmagan) yozuvlarga
+    tegilmaydi -- foydalanuvchi limiti buzilmaydi."""
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=config.CONSTRUCTOR_LIMIT_HOURS)
+        removed = (
+            db.query(models.ConstructorUsage)
+            .filter(models.ConstructorUsage.used_at <= cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return removed
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def purge_news() -> int:

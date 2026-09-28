@@ -1,0 +1,68 @@
+/* Dialog oynalar (js/dialogs.js) — sayt va admin panel uchun umumiy */
+body.lgd-lock { overflow: hidden; }
+
+.lgd-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(6, 38, 61, 0.45);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.18s ease;
+}
+.lgd-overlay.open { opacity: 1; }
+
+.lgd-card {
+  width: 100%; max-width: 420px;
+  background: var(--white, #fff);
+  border: 1px solid var(--line, rgba(6,38,61,.12));
+  border-radius: var(--radius-lg, 24px);
+  box-shadow: var(--shadow-lift, 0 18px 40px rgba(6,38,61,.18));
+  padding: 30px 28px 24px;
+  text-align: center;
+  font-family: var(--font-body, "Manrope", "Segoe UI", sans-serif);
+  transform: translateY(12px) scale(0.97);
+  transition: transform 0.22s var(--ease, cubic-bezier(.22,.61,.36,1));
+}
+.lgd-overlay.open .lgd-card { transform: none; }
+
+.lgd-icon {
+  width: 54px; height: 54px; margin: 0 auto 16px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--ice-2, #dceaf5); color: var(--sky-deep, #12557f);
+}
+.lgd-icon svg { width: 26px; height: 26px; }
+.lgd-danger .lgd-icon { background: #fde8e6; color: #c0392b; }
+.lgd-warning .lgd-icon { background: var(--amber-soft, #fbf0dd); color: #b9741a; }
+.lgd-success .lgd-icon { background: #e3f5ea; color: #1f8a4c; }
+
+.lgd-title {
+  margin: 0 0 8px; font-family: var(--font-head, "Fraunces", Georgia, serif);
+  font-size: 1.28rem; line-height: 1.25; color: var(--navy, #06263d); font-weight: 600;
+}
+.lgd-message { margin: 0 0 20px; color: var(--navy-soft, #3c6484); font-size: 0.94rem; line-height: 1.55; white-space: pre-line; }
+
+.lgd-input {
+  width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 12px 14px;
+  border: 1px solid var(--line-strong, rgba(6,38,61,.22)); border-radius: var(--radius-sm, 10px);
+  font: inherit; color: var(--navy, #06263d); background: var(--ice, #eef5fa);
+}
+.lgd-input:focus { outline: 2px solid var(--sky, #2e86c8); outline-offset: 1px; background: #fff; }
+.lgd-error { min-height: 18px; margin-bottom: 8px; color: #c0392b; font-size: 0.82rem; text-align: left; }
+
+.lgd-actions { display: flex; gap: 10px; }
+.lgd-btn {
+  flex: 1; padding: 12px 16px; border-radius: 999px; border: 1px solid transparent;
+  font: 600 0.92rem var(--font-body, sans-serif); cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.lgd-btn:hover { transform: translateY(-1px); }
+.lgd-btn:focus-visible { outline: 2px solid var(--sky, #2e86c8); outline-offset: 2px; }
+.lgd-btn-ghost { background: transparent; border-color: var(--line-strong, rgba(6,38,61,.22)); color: var(--navy, #06263d); }
+.lgd-btn-ghost:hover { background: var(--ice, #eef5fa); }
+.lgd-btn-main { background: var(--sky-deep, #12557f); color: #fff; box-shadow: 0 6px 16px rgba(18,85,127,.28); }
+.lgd-btn-main:hover { background: var(--sky, #2e86c8); }
+.lgd-danger .lgd-btn-main { background: #c0392b; box-shadow: 0 6px 16px rgba(192,57,43,.28); }
+.lgd-danger .lgd-btn-main:hover { background: #a93226; }
+
+@media (max-width: 440px) { .lgd-actions { flex-direction: column-reverse; } }
+@media (prefers-reduced-motion: reduce) { .lgd-overlay, .lgd-card, .lgd-btn { transition: none; } }

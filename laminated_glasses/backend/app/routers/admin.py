@@ -17,7 +17,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from .. import backup, config, config_bundle, db_admin, honeypot_state, models, schemas, security, utils
@@ -45,7 +45,7 @@ def login(
 
     security.register_successful_login(request, db)
     return schemas.TokenResponse(
-        access_token=security.create_access_token(),
+        access_token=security.create_access_token(pw_hash=settings.password_hash),
         expires_in_minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES,
     )
 
@@ -345,16 +345,91 @@ def delete_order(
 @router.put("/settings/password")
 def change_password(
     payload: schemas.ChangePasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(security.get_current_admin),
 ):
+    """Parolni almashtirish HOZIRGI parolni talab qiladi (o'g'irlangan token
+    bilan parolni o'zgartirib olib bo'lmasligi uchun) va noto'g'ri urinishlar
+    login bilan bir xil brute-force blokiga hisoblanadi."""
+    security.check_login_allowed(request, db)
     settings = db.query(models.SiteSettings).first()
     if settings is None:
         raise HTTPException(status_code=404, detail="Sozlamalar topilmadi.")
 
+    if not security.verify_password(payload.current_password, settings.password_hash):
+        security.register_failed_login(request, db)
+        raise HTTPException(status_code=400, detail="Joriy parol noto'g'ri.")
+    if security.verify_password(payload.new_password, settings.password_hash):
+        raise HTTPException(status_code=400, detail="Yangi parol joriy paroldan farq qilishi kerak.")
+
     settings.password_hash = security.hash_password(payload.new_password)
     db.commit()
-    return {"message": "Parol muvaffaqiyatli o'zgartirildi."}
+    security.register_successful_login(request, db)
+    # Boshlang'ich parol serverda ochiq matn sifatida .admin_password faylida
+    # turardi -- endi u eskirdi, shuning uchun o'chiriladi.
+    try:
+        (config.DATA_DIR / ".admin_password").unlink(missing_ok=True)
+    except OSError:
+        pass
+    # Joriy sessiya uzilib qolmasligi uchun yangi token qaytariladi.
+    return {
+        "message": "Parol muvaffaqiyatli o'zgartirildi.",
+        "access_token": security.create_access_token(pw_hash=settings.password_hash),
+    }
+
+
+@router.put("/settings/site", response_model=schemas.TelegramOut)
+def update_site(
+    payload: schemas.UpdateSiteRequest,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    settings = db.query(models.SiteSettings).first()
+    settings.site_title = payload.site_title
+    db.commit()
+    return schemas.TelegramOut(
+        telegram_username=settings.telegram_username,
+        telegram_url=utils.telegram_url(settings.telegram_username),
+        site_title=settings.site_title,
+    )
+
+
+@router.get("/settings/security-status")
+def security_status(
+    request: Request,
+    _admin=Depends(security.get_current_admin),
+):
+    """Admin panelda "Xavfsizlik holati" kartochkasi uchun oddiy tekshiruvlar."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    checks = [
+        {
+            "ok": proto == "https",
+            "label": "HTTPS ulanish",
+            "detail": "Ulanish shifrlangan." if proto == "https" else "HTTP orqali kiryapsiz -- parol ochiq uzatiladi. Domen + SSL ulang.",
+        },
+        {
+            "ok": "*" not in config.ALLOWED_ORIGINS,
+            "label": "CORS cheklovi",
+            "detail": "Faqat ruxsat etilgan domenlar." if "*" not in config.ALLOWED_ORIGINS else "ALLOWED_ORIGINS=* -- production'da o'z domeningizni yozing.",
+        },
+        {
+            "ok": not (config.DATA_DIR / ".admin_password").exists(),
+            "label": "Boshlang'ich parol",
+            "detail": "Almashtirilgan." if not (config.DATA_DIR / ".admin_password").exists() else "Boshlang'ich parol hali almashtirilmagan.",
+        },
+        {
+            "ok": bool(config.GOOGLE_CLIENT_ID),
+            "label": "Google kirish",
+            "detail": "Sozlangan." if config.GOOGLE_CLIENT_ID else "GOOGLE_CLIENT_ID kiritilmagan.",
+        },
+        {
+            "ok": True,
+            "label": "Login brute-force himoyasi",
+            "detail": f"{config.MAX_LOGIN_ATTEMPTS} ta xato urinishdan so'ng {config.LOGIN_LOCKOUT_MINUTES} daqiqa blok.",
+        },
+    ]
+    return {"checks": checks}
 
 
 @router.get("/settings/telegram", response_model=schemas.TelegramOut)
@@ -420,10 +495,21 @@ def get_stats(
         sold_orders=len(sold),
         sold_revenue=round(sum(o.total_amount for o in sold), 2),
         sold_profit=round(sum(o.total_profit for o in sold), 2),
+        total_users=db.query(models.Customer)
+        .filter(models.Customer.google_sub.isnot(None))
+        .count(),
     )
 
 
 _WEEKDAY_UZ = ["Du", "Se", "Chor", "Pay", "Ju", "Shan", "Yak"]
+
+
+# "Haqiqiy odam" kaliti: Google orqali kirgan bo'lsa customer_id (qurilmalar
+# soni ahamiyatsiz), aks holda device_id. Bir odam telefon va kompyuterdan
+# kirsa ham 1 ta hisoblanadi.
+_VISITOR_KEY = (
+    "CASE WHEN customer_id IS NOT NULL THEN 'u' || customer_id ELSE 'd' || device_id END"
+)
 
 
 @router.get("/analytics", response_model=schemas.AnalyticsResponse)
@@ -432,47 +518,111 @@ def get_analytics(
     db: Session = Depends(get_db),
     _admin=Depends(security.get_current_admin),
 ):
-    """Kunlik noyob tashriflar statistikasi.
+    """Haqiqiy tashriflar va foydalanuvchilar statistikasi.
 
-    Har bir qurilma bir kunda faqat bitta marta hisoblanadi (1 device = 1
-    view), chunki VisitLog jadvalida (device_id, visit_date) jufti unique.
+    - Tashrif: bir odam bir kunda necha marta/qaysi qurilmadan kirmasin -- 1 ta.
+      Google orqali kirgan odam customer_id bo'yicha, mehmon device_id bo'yicha.
+    - Foydalanuvchi: faqat Google akkaunt bilan kirgan mijoz (bot, mehmon va
+      eski ism-bilan yozilganlar KIRMAYDI).
     """
     days = max(1, min(days, 90))
     today = datetime.utcnow().date()
+    yesterday = today - timedelta(days=1)
     start_date = today - timedelta(days=days - 1)
+    start_iso = start_date.isoformat()
 
-    rows = (
-        db.query(models.VisitLog.visit_date, func.count(models.VisitLog.id))
-        .filter(models.VisitLog.visit_date >= start_date)
-        .group_by(models.VisitLog.visit_date)
-        .all()
-    )
-    counts_by_date = {row[0]: row[1] for row in rows}
+    visit_rows = db.execute(
+        text(
+            f"SELECT visit_date, COUNT(DISTINCT {_VISITOR_KEY}) AS total, "
+            "COUNT(DISTINCT customer_id) AS users "
+            "FROM visit_logs WHERE visit_date >= :start GROUP BY visit_date"
+        ),
+        {"start": start_iso},
+    ).fetchall()
+    visits_by_date = {str(r[0])[:10]: (int(r[1]), int(r[2])) for r in visit_rows}
+
+    signup_rows = db.execute(
+        text(
+            "SELECT date(google_registered_at) AS d, COUNT(*) FROM customers "
+            "WHERE google_sub IS NOT NULL AND google_registered_at IS NOT NULL "
+            "AND date(google_registered_at) >= :start GROUP BY d"
+        ),
+        {"start": start_iso},
+    ).fetchall()
+    signups_by_date = {str(r[0]): int(r[1]) for r in signup_rows}
 
     daily: List[schemas.DailyVisitPoint] = []
     for offset in range(days):
         d = start_date + timedelta(days=offset)
-        weekday = _WEEKDAY_UZ[d.weekday()]
+        total, users = visits_by_date.get(d.isoformat(), (0, 0))
         daily.append(
             schemas.DailyVisitPoint(
                 date=d.isoformat(),
-                label=f"{weekday} {d.day:02d}.{d.month:02d}",
-                unique_visitors=counts_by_date.get(d, 0),
+                label=f"{_WEEKDAY_UZ[d.weekday()]} {d.day:02d}.{d.month:02d}",
+                unique_visitors=total,
+                user_visitors=users,
+                guest_visitors=max(0, total - users),
+                new_users=signups_by_date.get(d.isoformat(), 0),
             )
         )
 
-    total_unique_devices = db.query(
-        func.count(func.distinct(models.VisitLog.device_id))
+    today_total, today_users = visits_by_date.get(today.isoformat(), (0, 0))
+    yesterday_total, _ = visits_by_date.get(yesterday.isoformat(), (0, 0))
+
+    total_unique_visitors = db.execute(
+        text(f"SELECT COUNT(DISTINCT {_VISITOR_KEY}) FROM visit_logs")
     ).scalar() or 0
-    total_views = db.query(func.count(models.VisitLog.id)).scalar() or 0
-    yesterday = today - timedelta(days=1)
+    # "Jami ko'rishlar" = (odam, kun) juftliklari soni.
+    total_views = db.execute(
+        text(f"SELECT COUNT(*) FROM (SELECT DISTINCT {_VISITOR_KEY} AS k, visit_date FROM visit_logs)")
+    ).scalar() or 0
+
+    week_start = (today - timedelta(days=6)).isoformat()
+    user_row = db.execute(
+        text(
+            "SELECT COUNT(*), "
+            "COALESCE(SUM(CASE WHEN date(google_registered_at) = :today THEN 1 ELSE 0 END), 0), "
+            "COALESCE(SUM(CASE WHEN date(google_registered_at) = :yesterday THEN 1 ELSE 0 END), 0), "
+            "COALESCE(SUM(CASE WHEN date(google_registered_at) >= :week THEN 1 ELSE 0 END), 0), "
+            "COALESCE(SUM(CASE WHEN date(last_login_at) >= :week THEN 1 ELSE 0 END), 0) "
+            "FROM customers WHERE google_sub IS NOT NULL"
+        ),
+        {"today": today.isoformat(), "yesterday": yesterday.isoformat(), "week": week_start},
+    ).fetchone()
+
+    recent = (
+        db.query(models.Customer)
+        .filter(models.Customer.google_sub.isnot(None))
+        .order_by(models.Customer.last_login_at.desc())
+        .limit(10)
+        .all()
+    )
 
     return schemas.AnalyticsResponse(
-        today_visitors=counts_by_date.get(today, 0),
-        yesterday_visitors=counts_by_date.get(yesterday, 0),
-        total_unique_devices=total_unique_devices,
-        total_views=total_views,
+        today_visitors=today_total,
+        yesterday_visitors=yesterday_total,
+        today_users=today_users,
+        today_guests=max(0, today_total - today_users),
+        total_unique_visitors=int(total_unique_visitors),
+        total_views=int(total_views),
+        total_users=int(user_row[0]),
+        new_users_today=int(user_row[1]),
+        new_users_yesterday=int(user_row[2]),
+        new_users_7d=int(user_row[3]),
+        active_users_7d=int(user_row[4]),
         daily=daily,
+        recent_users=[
+            schemas.RecentUserOut(
+                id=c.id,
+                name=c.name,
+                email=c.email,
+                picture_url=c.picture_url,
+                login_count=c.login_count or 0,
+                last_login_at=c.last_login_at,
+                registered_at=c.google_registered_at,
+            )
+            for c in recent
+        ],
     )
 
 # Yangiliklar va aloqa havolalarini boshqarish (JWT bilan himoyalangan).

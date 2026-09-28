@@ -1,5 +1,6 @@
 """Parol xeshlash, JWT tokenlar va admin loginini brute-force dan himoya."""
 
+import hashlib
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from . import config, models
+from .database import get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -25,9 +27,18 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     return pwd_context.verify(plain_password, password_hash)
 
 
-def create_access_token(subject: str = "admin") -> str:
+def password_fingerprint(password_hash: str) -> str:
+    """Parol xeshidan olingan qisqa "barmoq izi". Admin tokeniga yoziladi:
+    parol o'zgartirilganda barcha eski tokenlar (o'g'irlanganlari ham)
+    avtomatik yaroqsiz bo'lib qoladi."""
+    return hashlib.sha256((config.SECRET_KEY + password_hash).encode()).hexdigest()[:16]
+
+
+def create_access_token(subject: str = "admin", pw_hash: str = "") -> str:
     expire = datetime.utcnow() + timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": subject, "exp": expire, "iat": datetime.utcnow()}
+    if pw_hash:
+        payload["pwf"] = password_fingerprint(pw_hash)
     return jwt.encode(payload, config.SECRET_KEY, algorithm=config.ALGORITHM)
 
 
@@ -40,6 +51,7 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 def get_current_admin(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
 ):
     """Barcha admin endpointlari uchun himoya qatlami."""
     if credentials is None:
@@ -56,7 +68,90 @@ def get_current_admin(
             detail="Token yaroqsiz yoki muddati tugagan. Qaytadan kiring.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Parol o'zgargan bo'lsa, eski token endi o'tmaydi.
+    settings = db.query(models.SiteSettings).first()
+    if (
+        settings is None
+        or payload.get("pwf") != password_fingerprint(settings.password_hash)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessiya eskirgan (parol o'zgargan). Qaytadan kiring.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Mijoz (Google orqali kirgan foydalanuvchi) sessiyasi
+# ---------------------------------------------------------------------------
+# Admin tokenidan ALOHIDA: `sub` = "customer" (admin uchun "admin"), shu sabab
+# mijoz tokeni admin endpointlarida hech qachon o'tmaydi va aksincha. Token
+# ichida mijoz `id`si bilan birga Google `sub`i ham bor -- baza tiklanib ID'lar
+# boshqa odamga tegib qolsa ham, eski token begona akkauntni ochib bermaydi.
+
+
+def create_customer_token(customer: models.Customer) -> str:
+    now = datetime.utcnow()
+    payload = {
+        "sub": "customer",
+        "cid": customer.id,
+        "gsub": customer.google_sub,
+        "iat": now,
+        "exp": now + timedelta(days=config.CUSTOMER_TOKEN_EXPIRE_DAYS),
+    }
+    return jwt.encode(payload, config.SECRET_KEY, algorithm=config.ALGORITHM)
+
+
+def get_current_customer(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> models.Customer:
+    """Savat va buyurtma endpointlari uchun himoya: faqat Google orqali
+    kirgan mijoz o'tadi."""
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Avval Google orqali kiring.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if credentials is None:
+        raise unauthorized
+
+    payload = decode_access_token(credentials.credentials)
+    if payload is None or payload.get("sub") != "customer":
+        raise unauthorized
+
+    customer = (
+        db.query(models.Customer)
+        .filter(models.Customer.id == payload.get("cid"))
+        .first()
+    )
+    if (
+        customer is None
+        or not customer.google_sub
+        or customer.google_sub != payload.get("gsub")
+    ):
+        raise unauthorized
+    return customer
+
+
+def get_optional_customer(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[models.Customer]:
+    """Token bo'lsa va yaroqli bo'lsa mijozni qaytaradi, aks holda None
+    (XATO KO'TARMAYDI) -- tashrif statistikasi kabi mehmon ham kira oladigan
+    endpointlar uchun."""
+    if credentials is None:
+        return None
+    payload = decode_access_token(credentials.credentials)
+    if payload is None or payload.get("sub") != "customer":
+        return None
+    customer = db.query(models.Customer).filter(models.Customer.id == payload.get("cid")).first()
+    if customer is None or not customer.google_sub or customer.google_sub != payload.get("gsub"):
+        return None
+    return customer
 
 
 def _get_client_ip(request: Request) -> str:

@@ -6,13 +6,14 @@ faqat bitta joyda -- buyurtmani rasmiylashtirish (checkout) javobida beriladi.
 
 from datetime import datetime, timedelta
 import json
+import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import config, honeypot_state, models, schemas, security, utils
+from .. import config, google_auth, honeypot_state, models, schemas, security, utils
 from ..database import get_db
 
 router = APIRouter(tags=["Public"])
@@ -31,51 +32,73 @@ def _settings(db: Session) -> models.SiteSettings:
     return settings
 
 
-def _customer_or_404(db: Session, device_id: str) -> models.Customer:
-    customer = (
-        db.query(models.Customer)
-        .filter(models.Customer.device_id == device_id.strip())
-        .first()
-    )
-    if customer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Avval saytga ismingizni kiritib kiring.",
-        )
-    return customer
-
-
 @router.get("/site", response_model=schemas.SiteInfo)
 def site_info(db: Session = Depends(get_db)):
     return schemas.SiteInfo(
         site_title=_settings(db).site_title,
         cart_ttl_days=config.CART_TTL_DAYS,
+        google_client_id=config.GOOGLE_CLIENT_ID,
     )
+
+
+_BOT_MARKERS = (
+    "bot", "crawler", "spider", "slurp", "headless", "lighthouse", "curl/", "wget/",
+    "python-requests", "httpx", "go-http-client", "monitor", "uptime", "facebookexternalhit",
+    "preview", "scrapy",
+)
+
+
+def _looks_like_bot(request: Request) -> bool:
+    """Ochiq botlar (qidiruv robotlari, monitoring, skriptlar) statistikani
+    shishirmasligi uchun. Yashiringan botni ushlamaydi -- lekin real
+    foydalanuvchilar soni (Google akkauntlar) bunga bog'liq emas."""
+    ua = (request.headers.get("user-agent") or "").lower()
+    return (not ua) or any(marker in ua for marker in _BOT_MARKERS)
 
 
 @router.post("/visit", status_code=204)
-def log_visit(payload: schemas.VisitIn, db: Session = Depends(get_db)):
-    """Sayt tashrifini qayd qiladi. Bitta qurilma bir kunda bir necha marta
-    kirsa ham, (device_id, kun) jufti unique bo'lgani uchun faqat bitta
-    qator saqlanadi -- ya'ni 1 ta qurilma = 1 ta ko'rish (view)."""
-    today = datetime.utcnow().date()
-    exists = (
-        db.query(models.VisitLog)
-        .filter(
-            models.VisitLog.device_id == payload.device_id.strip(),
-            models.VisitLog.visit_date == today,
-        )
-        .first()
-    )
-    if exists is not None:
+def log_visit(
+    payload: schemas.VisitIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: Optional[models.Customer] = Depends(security.get_optional_customer),
+):
+    """Sayt tashrifini qayd qiladi.
+
+    Bitta qurilma bir kunda bir necha marta kirsa ham, (device_id, kun) jufti
+    unique bo'lgani uchun faqat bitta qator saqlanadi. Foydalanuvchi Google
+    orqali kirgan bo'lsa, qator uning `customer_id`siga bog'lanadi -- shu
+    tufayli statistikada bir odam ikki qurilmadan kirsa ham 1 ta sanaladi.
+    """
+    if _looks_like_bot(request):
         return None
 
-    db.add(models.VisitLog(device_id=payload.device_id.strip(), visit_date=today))
+    device_id = payload.device_id.strip()
+    today = datetime.utcnow().date()
+    row = (
+        db.query(models.VisitLog)
+        .filter(models.VisitLog.device_id == device_id, models.VisitLog.visit_date == today)
+        .first()
+    )
+    if row is not None:
+        # Mehmon sifatida kirib, keyin shu kuni Google bilan kirgan bo'lsa.
+        if customer is not None and row.customer_id != customer.id:
+            row.customer_id = customer.id
+            db.commit()
+        return None
+
+    db.add(
+        models.VisitLog(
+            device_id=device_id,
+            visit_date=today,
+            customer_id=customer.id if customer is not None else None,
+        )
+    )
     try:
         db.commit()
     except IntegrityError:
         # Parallel so'rov bir vaqtda xuddi shu qatorni yozgan bo'lishi mumkin --
-        # bu holatda ham natija bir xil: 1 ta qurilma = 1 ta ko'rish.
+        # natija bir xil: 1 ta odam = 1 ta ko'rish.
         db.rollback()
     return None
 
@@ -132,35 +155,146 @@ def list_categories(db: Session = Depends(get_db)):
     return db.query(models.Category).order_by(models.Category.name).all()
 
 
-@router.get("/customer/{device_id}", response_model=schemas.CustomerOut)
-def get_customer(device_id: str, db: Session = Depends(get_db)):
-    """Qurilma avval ro'yxatdan o'tganmi? O'tgan bo'lsa ismini qaytaradi va
-    foydalanuvchidan qaytib so'ralmaydi."""
-    customer = _customer_or_404(db, device_id)
+# ---------- Google orqali kirish ----------
+#
+# Avval savatga birinchi marta qo'shishda ism so'ralar edi (device_id bo'yicha,
+# hech qanday tasdiqsiz). Endi foydalanuvchi Google akkaunti bilan kiradi:
+# brauzer Google'dan ID token oladi, biz uni SERVERDA tekshiramiz
+# (google_auth.py), keyin o'zimizning mijoz sessiya tokenimizni beramiz.
+# Savat va checkout shu token bilan himoyalangan.
+
+
+def _apply_identity(customer: models.Customer, ident: google_auth.GoogleIdentity) -> None:
+    """Google'dan kelgan (yangilanishi mumkin) ma'lumotlarni yozadi.
+
+    ISM: foydalanuvchi ismini o'zi kiritgan/tasdiqlagan bo'lsa
+    (`name_confirmed`), Google'dagi ism uni QAYTA YOZMAYDI. Aks holda Google
+    ismi vaqtinchalik (oldindan to'ldirilgan) qiymat sifatida turadi va
+    foydalanuvchidan ism so'raladi. EMAIL esa doim Google'dan olinadi."""
+    now = datetime.utcnow()
+    customer.google_sub = ident.sub
+    if not customer.name_confirmed:
+        customer.name = ident.name
+    customer.email = ident.email
+    customer.email_verified = 1 if ident.email_verified else 0
+    customer.picture_url = ident.picture
+    customer.given_name = ident.given_name
+    customer.family_name = ident.family_name
+    customer.locale = ident.locale
+    if customer.google_registered_at is None:
+        customer.google_registered_at = now
+    customer.login_count = (customer.login_count or 0) + 1
+    customer.last_login_at = now
+    customer.last_seen_at = now
+
+
+@router.post("/auth/google", response_model=schemas.AuthOut)
+def google_login(payload: schemas.GoogleLoginIn, request: Request, db: Session = Depends(get_db)):
+    """Google ID tokenni tekshirib, mijozni topadi yoki yaratadi.
+
+    BIR AKKAUNT = BIR MIJOZ: `google_sub` bo'yicha qidiriladi. Shu akkauntdan
+    2-marta (yoki boshqa qurilmadan) kirilsa, yangi yozuv YARATILMAYDI --
+    mavjud mijoz qaytariladi, faqat `login_count`/`last_login_at` yangilanadi.
+    """
+    security.enforce_rate_limit(request, "google_login", max_calls=30, window_seconds=600)
+    ident = google_auth.verify_google_id_token(payload.credential)
+
+    customer = (
+        db.query(models.Customer)
+        .filter(models.Customer.google_sub == ident.sub)
+        .first()
+    )
+    is_new = False
+
+    if customer is None:
+        # Eski tizimdagi (faqat ism bilan ro'yxatdan o'tgan) mijozning savati va
+        # buyurtmalari yo'qolmasligi uchun: shu qurilma identifikatori bo'yicha
+        # hali hech qaysi Google akkauntga bog'lanmagan yozuv bo'lsa, uni shu
+        # akkauntga biriktiramiz.
+        device_id = (payload.device_id or "").strip()
+        if device_id and not device_id.startswith("google:"):
+            customer = (
+                db.query(models.Customer)
+                .filter(
+                    models.Customer.device_id == device_id,
+                    models.Customer.google_sub.is_(None),
+                )
+                .first()
+            )
+            if customer is not None and customer.name:
+                # Eski tizimda ismini o'zi yozgan -- qayta so'ralmaydi.
+                customer.name_confirmed = 1
+        if customer is None:
+            customer = models.Customer(device_id=f"google:{ident.sub}", name=ident.name)
+            db.add(customer)
+            is_new = True
+
+    _apply_identity(customer, ident)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Bir vaqtda kelgan ikki so'rov bir akkauntni ikki marta yaratmoqchi
+        # bo'ldi -- unique indeks buni to'xtatdi; mavjud yozuvni olamiz.
+        db.rollback()
+        customer = (
+            db.query(models.Customer)
+            .filter(models.Customer.google_sub == ident.sub)
+            .first()
+        )
+        if customer is None:
+            raise HTTPException(status_code=500, detail="Kirishda xatolik. Qayta urinib ko'ring.")
+        is_new = False
+        _apply_identity(customer, ident)
+        db.commit()
+    db.refresh(customer)
+
+    # Statistika: shu qurilmaning avvalgi (mehmon sifatidagi) tashriflari endi
+    # shu odamga tegishli -- aks holda u bir marta mehmon, bir marta
+    # foydalanuvchi bo'lib ikki marta sanalib qolardi.
+    device_id = (payload.device_id or "").strip()
+    if device_id:
+        db.query(models.VisitLog).filter(
+            models.VisitLog.device_id == device_id,
+            models.VisitLog.customer_id.is_(None),
+        ).update({"customer_id": customer.id}, synchronize_session=False)
+        db.commit()
+
+    return schemas.AuthOut(
+        access_token=security.create_customer_token(customer),
+        expires_in_days=config.CUSTOMER_TOKEN_EXPIRE_DAYS,
+        is_new=is_new,
+        customer=schemas.CustomerOut.model_validate(customer),
+    )
+
+
+@router.get("/auth/me", response_model=schemas.CustomerOut)
+def auth_me(
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Saqlangan sessiya hali amal qiladimi? Qilsa, mijoz ma'lumotini qaytaradi."""
     customer.last_seen_at = datetime.utcnow()
     db.commit()
     return customer
 
 
-@router.post("/customer", response_model=schemas.CustomerOut, status_code=201)
-def register_customer(payload: schemas.CustomerIn, request: Request, db: Session = Depends(get_db)):
-    """Ismni bazaga yozadi -- faqat BIR MAROTABA. Shu device_id allaqachon
-    ro'yxatdan o'tgan bo'lsa, ism o'zgartirilmaydi va mavjud yozuv o'zgarishsiz
-    qaytariladi: ism qurilmaga bir marta bog'lanadi va keyin almashtirib
-    bo'lmaydi."""
-    security.enforce_rate_limit(request, "register_customer", max_calls=20, window_seconds=600)
-    customer = (
-        db.query(models.Customer)
-        .filter(models.Customer.device_id == payload.device_id)
-        .first()
-    )
-    if customer is None:
-        customer = models.Customer(device_id=payload.device_id, name=payload.name)
-        db.add(customer)
-    else:
-        # Ism allaqachon qayd qilingan -- qayta yozilmaydi, faqat faollik vaqti yangilanadi.
-        customer.last_seen_at = datetime.utcnow()
-
+@router.put("/auth/profile", response_model=schemas.CustomerOut)
+def update_profile(
+    payload: schemas.ProfileUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Profildagi ismni saqlaydi (Google akkauntni tanlagandan keyingi birinchi
+    so'rov ham shu). FAQAT ism o'zgaradi -- email Google'dan keladi va bu
+    yerdan o'zgartirib bo'lmaydi."""
+    security.enforce_rate_limit(request, "update_profile", max_calls=20, window_seconds=600)
+    try:
+        customer.name = utils.clean_person_name(payload.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    customer.name_confirmed = 1
+    customer.last_seen_at = datetime.utcnow()
     db.commit()
     db.refresh(customer)
     return customer
@@ -215,17 +349,23 @@ def _cart_response(db: Session, customer: models.Customer, removed: int = 0):
     )
 
 
-@router.get("/cart/{device_id}", response_model=schemas.CartOut)
-def get_cart(device_id: str, db: Session = Depends(get_db)):
-    customer = _customer_or_404(db, device_id)
+@router.get("/cart", response_model=schemas.CartOut)
+def get_cart(
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
     removed = utils.purge_expired_cart_items(db, customer.id)
     return _cart_response(db, customer, removed)
 
 
 @router.post("/cart", response_model=schemas.CartOut, status_code=201)
-def add_to_cart(payload: schemas.CartItemIn, request: Request, db: Session = Depends(get_db)):
+def add_to_cart(
+    payload: schemas.CartItemIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
     security.enforce_rate_limit(request, "add_to_cart", max_calls=60, window_seconds=300)
-    customer = _customer_or_404(db, payload.device_id)
     utils.purge_expired_cart_items(db, customer.id)
 
     product = (
@@ -268,9 +408,11 @@ def add_to_cart(payload: schemas.CartItemIn, request: Request, db: Session = Dep
 
 @router.put("/cart/item/{item_id}", response_model=schemas.CartOut)
 def update_cart_item(
-    item_id: int, payload: schemas.CartQuantityIn, db: Session = Depends(get_db)
+    item_id: int,
+    payload: schemas.CartQuantityIn,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
 ):
-    customer = _customer_or_404(db, payload.device_id)
     item = (
         db.query(models.CartItem)
         .filter(models.CartItem.id == item_id, models.CartItem.customer_id == customer.id)
@@ -285,8 +427,11 @@ def update_cart_item(
 
 
 @router.delete("/cart/item/{item_id}", response_model=schemas.CartOut)
-def delete_cart_item(item_id: int, device_id: str, db: Session = Depends(get_db)):
-    customer = _customer_or_404(db, device_id)
+def delete_cart_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
     item = (
         db.query(models.CartItem)
         .filter(models.CartItem.id == item_id, models.CartItem.customer_id == customer.id)
@@ -300,16 +445,22 @@ def delete_cart_item(item_id: int, device_id: str, db: Session = Depends(get_db)
     return _cart_response(db, customer)
 
 
-@router.delete("/cart/{device_id}", response_model=schemas.CartOut)
-def clear_cart(device_id: str, db: Session = Depends(get_db)):
-    customer = _customer_or_404(db, device_id)
+@router.delete("/cart", response_model=schemas.CartOut)
+def clear_cart(
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
     db.query(models.CartItem).filter(models.CartItem.customer_id == customer.id).delete()
     db.commit()
     return _cart_response(db, customer)
 
 
 @router.post("/checkout", response_model=schemas.CheckoutOut, status_code=201)
-def checkout(payload: schemas.CheckoutIn, request: Request, db: Session = Depends(get_db)):
+def checkout(
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
     """Savatni buyurtmaga aylantiradi va Telegram havolasini qaytaradi.
 
     Telegram username butun loyihada faqat shu javobda uchraydi.
@@ -317,7 +468,6 @@ def checkout(payload: schemas.CheckoutIn, request: Request, db: Session = Depend
     # Skript orqali cheksiz buyurtma yaratib, admin panelini spam bilan
     # to'ldirishning oldini olish uchun cheklov.
     security.enforce_rate_limit(request, "checkout", max_calls=8, window_seconds=600)
-    customer = _customer_or_404(db, payload.device_id)
     utils.purge_expired_cart_items(db, customer.id)
 
     cart_items = (
@@ -401,6 +551,75 @@ def public_constructor_sizes(db: Session = Depends(get_db)):
     )
 
 
+# ---------- Konstruktor limiti (Google akkaunt bo'yicha, 24 soatda 1 marta) ----------
+#
+# "Foydalanish" = konstruktorda rasm yuklab dizayn boshlash (frontend buni
+# /constructor/start orqali serverga bildiradi). Boshlangan paytdan
+# CONSTRUCTOR_LIMIT_HOURS soat ichida shu akkaunt yangi foydalanishni
+# boshlay olmaydi. Limit har bir Gmail uchun ALOHIDA. Server tomonda qattiq
+# tekshiriladigan qism -- "Telegramga yuborish" (/constructor/share): u faqat
+# faol foydalanish oynasi bor akkauntga ishlaydi.
+
+_constructor_lock = threading.Lock()
+
+
+def _limit_window() -> timedelta:
+    return timedelta(hours=config.CONSTRUCTOR_LIMIT_HOURS)
+
+
+def _active_constructor_usage(db: Session, customer_id: int) -> Optional[models.ConstructorUsage]:
+    cutoff = datetime.utcnow() - _limit_window()
+    return (
+        db.query(models.ConstructorUsage)
+        .filter(
+            models.ConstructorUsage.customer_id == customer_id,
+            models.ConstructorUsage.used_at > cutoff,
+        )
+        .order_by(models.ConstructorUsage.used_at.desc())
+        .first()
+    )
+
+
+def _limit_out(usage: Optional[models.ConstructorUsage]) -> schemas.ConstructorLimitOut:
+    if usage is None:
+        return schemas.ConstructorLimitOut(allowed=True, limit_hours=config.CONSTRUCTOR_LIMIT_HOURS)
+    remaining = (usage.used_at + _limit_window() - datetime.utcnow()).total_seconds()
+    return schemas.ConstructorLimitOut(
+        allowed=False,
+        limit_hours=config.CONSTRUCTOR_LIMIT_HOURS,
+        retry_after_seconds=max(1, int(remaining)),
+    )
+
+
+@router.get("/constructor/limit", response_model=schemas.ConstructorLimitOut)
+def constructor_limit(
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Akkaunt konstruktordan hozir foydalana oladimi (yoki qancha kutish kerak)."""
+    return _limit_out(_active_constructor_usage(db, customer.id))
+
+
+@router.post("/constructor/start", response_model=schemas.ConstructorLimitOut)
+def constructor_start(
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Konstruktordan foydalanishni boshlaydi va limitni sarflaydi.
+
+    `allowed=True` -- foydalanish yozildi (keyingisi limit_hours dan so'ng).
+    `allowed=False` -- limit sarflangan, `retry_after_seconds` ichida kutish kerak."""
+    security.enforce_rate_limit(request, "constructor_start", max_calls=30, window_seconds=600)
+    with _constructor_lock:
+        active = _active_constructor_usage(db, customer.id)
+        if active is not None:
+            return _limit_out(active)
+        db.add(models.ConstructorUsage(customer_id=customer.id, used_at=datetime.utcnow()))
+        db.commit()
+    return schemas.ConstructorLimitOut(allowed=True, limit_hours=config.CONSTRUCTOR_LIMIT_HOURS)
+
+
 @router.post("/constructor/share", response_model=schemas.ConstructorShareOut)
 async def share_constructor_preview(
     request: Request,
@@ -409,6 +628,7 @@ async def share_constructor_preview(
     size_label: Optional[str] = Form(None),
     pane_count: Optional[int] = Form(None),
     db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
 ):
     """Konstruktordagi \"Share\" tugmasi: mijoz yuklagan asl rasm va
     oynalarga bo'lingan holda ko'rinadigan tayyor dizayn diskka saqlanadi,
@@ -418,6 +638,12 @@ async def share_constructor_preview(
     o'zi Telegram ilovasida \"Yuborish\"ni bosib amalga oshiradi -- bu
     yerda bot orqali avtomatik xabar yuborilmaydi."""
     security.enforce_rate_limit(request, "constructor_share", max_calls=15, window_seconds=600)
+    # Faqat konstruktordan foydalanishni (limitni) boshlagan akkaunt yubora oladi.
+    if _active_constructor_usage(db, customer.id) is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Avval konstruktorda rasm yuklab, dizaynni boshlang.",
+        )
     # Bu rasmlar mahsulot rasmlaridan ALOHIDA papkaga saqlanadi (constructor
     # preview) -- shu tufayli har 24 soatlik avtomatik tozalash faqat shu
     # vaqtinchalik fayllarni o'chiradi, mahsulotlarning joriy rasmlariga

@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dialogs.css" />
 <style>
   .constructor-grid{display:grid;grid-template-columns:1.05fr 0.95fr;gap:26px;align-items:start;}
   @media (max-width:860px){.constructor-grid{grid-template-columns:1fr;}}
@@ -81,8 +82,8 @@
 </head>
 <body>
 
-<!-- Ism so'raydigan oyna. Sayt ochilganda EMAS, foydalanuvchi birinchi marta
-     "Savatga" tugmasini bosganda ochiladi va faqat bir marotaba ko'rinadi. -->
+<!-- Google orqali kirish oynasi. Sayt ochilganda EMAS, foydalanuvchi
+     "Savatga" tugmasini bosganda (kirmagan bo'lsa) ochiladi. -->
 <div class="gate" id="gate">
   <div class="gate-card">
     <svg class="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -92,14 +93,12 @@
         <stop stop-color="#8CC4E8"/><stop offset="1" stop-color="#12557F"/>
       </linearGradient></defs>
     </svg>
-    <h1>Yana bitta qadam qoldi</h1>
-    <p>Mahsulot savatga qo'shilishidan oldin ismingizni so'raymiz — buyurtmangiz shu ism bilan qayd qilinadi va sotuvchi sizni aynan shu ism orqali topadi. Ism faqat shu bir marta so'raladi va keyin o'zgartirilmaydi.</p>
-    <form id="gateForm" novalidate>
-      <input type="text" id="gateName" class="gate-input" placeholder="Masalan: Aziz Karimov" maxlength="120" autocomplete="name" />
-      <div class="gate-error" id="gateError"></div>
-      <button type="submit" class="btn btn-primary btn-block" id="gateBtn">Davom etish</button>
-    </form>
-    <p class="gate-note">Telefon raqami yoki parol so'ralmaydi. Ismingiz brauzeringizga bog'lanadi: shu qurilmadan qayta kirsangiz, sayt sizni o'zi taniydi va ism qayta so'ralmaydi.</p>
+    <h1>Google orqali kiring</h1>
+    <p>Mahsulotni savatga qo'shish uchun Google akkauntingiz bilan kiring. Buyurtmangiz Gmail akkauntingizdagi ism bilan qayd qilinadi va savatingiz istalgan qurilmada saqlanib turadi.</p>
+    <div class="gate-google" id="googleBtn" aria-live="polite"></div>
+    <div class="gate-error" id="gateError" role="alert"></div>
+    <button type="button" class="gate-cancel" id="gateCancel">Hozircha kerak emas</button>
+    <p class="gate-note">Faqat ismingiz, emailingiz va profil rasmingiz olinadi — parolingiz saytga hech qachon yetib kelmaydi. Bitta Google akkaunt = bitta foydalanuvchi: qayta kirsangiz, yangi yozuv ochilmaydi.</p>
   </div>
 </div>
 
@@ -122,7 +121,7 @@
       <button class="menu-toggle" id="menuToggle" aria-label="Menyuni ochish" aria-expanded="false" aria-controls="mobileNav">
         <span></span><span></span><span></span>
       </button>
-      <button class="user-chip static" id="userChip" title="Ismingiz" tabindex="-1">
+      <button class="user-chip" id="userChip" hidden title="Chiqish uchun bosing" tabindex="0">
         <span class="avatar" id="userInitial">?</span>
         <span class="name" id="userName">Mehmon</span>
       </button>
@@ -201,6 +200,7 @@
           <input type="file" id="constructorImageInput" accept=".jpg,.jpeg,.png,.webp" hidden />
         </label>
         <div class="constructor-error" id="constructorError"></div>
+        <div class="constructor-limit" id="constructorLimit" hidden></div>
       </div>
 
       <div class="constructor-panel">
@@ -297,7 +297,7 @@
       <div class="step">
         <b>2</b>
         <h3>Savatga soling</h3>
-        <p>"Savatga" tugmasini birinchi bosganingizda ismingiz so'raladi — bu faqat bir marta bo'ladi va keyin qayta so'ralmaydi. Savat 7 kun davomida saqlanadi.</p>
+        <p>"Savatga" tugmasini birinchi bosganingizda Gmail (Google) akkauntingizni tanlaysiz — ismingiz Gmail akkauntingizdan avtomatik olinadi, alohida yozib o'tirmaysiz. Savat 7 kun davomida saqlanadi.</p>
       </div>
       <div class="step">
         <b>3</b>
@@ -330,7 +330,7 @@
       <article class="news-card">
         <span class="news-date">E'lon</span>
         <h3>Buyurtma jarayoni soddalashtirildi</h3>
-        <p>Endi saytga kirishda ism so'ralmaydi — faqat "Savatga" tugmasi bosilganda va faqat bir marta so'raladi.</p>
+        <p>Saytga kirishda ism so'ralmaydi — "Savatga" tugmasi bosilganda Gmail akkauntingizni tanlaysiz, ism esa undan avtomatik olinadi.</p>
       </article>
       <article class="news-card">
         <span class="news-date">Maslahat</span>
@@ -351,12 +351,12 @@
     </div>
     <div class="rule-grid">
       <div class="rule">
-        <h3>Ism — yagona talab</h3>
-        <p>Parol, telefon raqami yoki pochta so'ralmaydi. Saytga kirganingizda hech narsa so'ralmaydi — ism faqat "Savatga" tugmasi birinchi bosilganda so'raladi, chunki buyurtma shu ism bilan qayd qilinadi.</p>
+        <h3>Google akkaunt va ism</h3>
+        <p>Saytga kirganingizda hech narsa so'ralmaydi. "Savatga" yoki konstruktordan foydalanishda Gmail (Google) akkauntingiz orqali kirasiz — ismingiz va emailingiz Gmail'dan avtomatik olinadi, buyurtma shu ism bilan qayd qilinadi. Parolingiz saytga hech qachon yetib kelmaydi.</p>
       </div>
       <div class="rule">
-        <h3>Ism bir marotaba so'raladi va o'zgartirilmaydi</h3>
-        <p>Ismingiz brauzeringizdagi maxsus belgi bilan bazaga bir marta bog'lanadi va keyin o'zgartirib bo'lmaydi. Shu qurilmadan qayta kirsangiz, ism qaytadan so'ralmaydi. Boshqa telefon yoki brauzerdan kirsangiz — u yerda bir marta yana so'raladi.</p>
+        <h3>Ismni profilingizdan o'zgartirishingiz mumkin</h3>
+        <p>Ism alohida so'ralmaydi — u Gmail akkauntingizdan avtomatik olinadi. Xohlasangiz, uni yuqoridagi profil tugmasi orqali o'zgartirishingiz mumkin. Email esa Google akkauntingizdan olinadi va o'zgartirilmaydi.</p>
       </div>
       <div class="rule highlight">
         <h3>Savat 7 kun turadi</h3>
@@ -490,6 +490,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="/js/dialogs.js"></script>
 <script src="/js/main.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded",()=>{
@@ -502,12 +503,141 @@ document.addEventListener("DOMContentLoaded",()=>{
 <script>
 (function(){
   const state = { sizes: [], selectedId: null, imageSrc: '', imageObj: null };
+
+  /* ---- Konstruktor limiti: har bir Google akkaunt (Gmail) uchun N soatda 1 marta ----
+     Rasm yuklanganda /constructor/start chaqiriladi va limit sarflanadi. Shu
+     sahifa ochiq turguncha (yangilanmaguncha) o'lcham/rasmni almashtirish,
+     yuklab olish va Telegramga yuborish bir "foydalanish" hisoblanadi.
+     Telegramga yuborish (server) faqat faol foydalanishi bor akkauntga ishlaydi. */
+  const session = { started: false, saved: false };
+  let limit = { loaded: false, allowed: true, hours: 24, until: 0 };
+  let customer = (typeof currentCustomer === 'function') ? currentCustomer() : null;
+  let authReady = (typeof isAuthChecked === 'function') ? isAuthChecked() : false;
+  let limitTick = null;
+  const DROP_DEFAULT_TEXT = "Rasm tanlash uchun bosing yoki shu yerga tashlang";
   const $ = (id) => document.getElementById(id);
 
   function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str??''; return d.innerHTML; }
   function formatSum(v){ return Math.round(Number(v)||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g,' '); }
   function round(n){ return Math.round(n*10)/10; }
   function selectedSize(){ return state.sizes.find(s=>s.id===state.selectedId) || null; }
+
+  function guestText(){
+    return `Konstruktordan foydalanish uchun Google akkauntingiz (Gmail) bilan kiring. Har bir akkaunt konstruktordan ${limit.hours} soatda 1 marta foydalana oladi.`;
+  }
+
+  function renderLimit(){
+    const box = $('constructorLimit');
+    const drop = $('constructorDropLabel');
+    if(!box) return;
+    drop.classList.remove('is-disabled');
+    box.className = 'constructor-limit';
+
+    if(!authReady){ box.hidden = true; return; }
+
+    if(!customer){
+      box.hidden = false;
+      box.innerHTML = `<div class="cl-body"><strong>Google orqali kirish kerak</strong><small></small><button type="button" class="btn btn-primary btn-sm" id="constructorLoginBtn">Google orqali kirish</button></div>`;
+      box.querySelector('small').textContent = guestText();
+      $('constructorLoginBtn').addEventListener('click', requireLogin);
+      return;
+    }
+
+    let title, text;
+    if(session.started){
+      title = "Bu — bugungi imkoniyatingiz";
+      text = `Sahifani yangilasangiz yoki yopsangiz, dizayn yo'qoladi va konstruktordan qayta foydalanish uchun ${limit.hours} soat kutish kerak. Tayyor dizaynni yuklab oling yoki Telegramga yuboring.`;
+      box.classList.add('is-ok');
+    } else if(!limit.loaded){
+      box.hidden = true;
+      return;
+    } else if(!limit.allowed){
+      const left = Math.max(1, Math.round((limit.until - Date.now())/1000));
+      title = "Foydalanish limiti tugagan";
+      text = `Yana ${formatWait(left)} dan so'ng qayta foydalana olasiz. Har bir Google akkaunt ${limit.hours} soatda 1 marta foydalana oladi.`;
+      box.classList.add('is-blocked');
+      drop.classList.add('is-disabled');
+    } else {
+      title = "Foydalanish mumkin";
+      text = `Rasm yuklaganingizda ${limit.hours} soatlik imkoniyatingiz sarflanadi. Shu sahifani yopmasdan o'lcham va rasmni xohlagancha almashtirishingiz mumkin.`;
+      box.classList.add('is-ok');
+    }
+    box.hidden = false;
+    box.innerHTML = `<div class="cl-body"><strong></strong><small></small></div>`;
+    box.querySelector('strong').textContent = title;
+    box.querySelector('small').textContent = text;
+  }
+
+  function applyLimit(r){
+    limit = {
+      loaded: true,
+      allowed: !!r.allowed,
+      hours: r.limit_hours || limit.hours,
+      until: r.allowed ? 0 : Date.now() + (Number(r.retry_after_seconds)||0) * 1000,
+    };
+    renderLimit();
+    clearInterval(limitTick);
+    limitTick = null;
+    if(!limit.allowed && !session.started){
+      // Daqiqa hisobi yangilanib turadi; vaqt tugagach holat serverdan qayta olinadi.
+      limitTick = setInterval(() => {
+        if(Date.now() >= limit.until){ clearInterval(limitTick); limitTick = null; loadLimit(); }
+        else renderLimit();
+      }, 30000);
+    }
+  }
+
+  async function loadLimit(){
+    if(!customer) return;
+    try{ applyLimit(await api('/constructor/limit')); }catch(e){ /* limit start paytida baribir tekshiriladi */ }
+  }
+
+  function blockedMessage(){
+    const left = Math.max(1, Math.round((limit.until - Date.now())/1000));
+    return `Bugungi limit ishlatilgan. Yana ${formatWait(left)} dan so'ng qayta urinib ko'ring.`;
+  }
+
+  function requireLogin(){
+    if(customer) return true;
+    openGate(null, {
+      text: guestText(),
+      onSuccess: () => { $('constructorError').textContent = ''; showToast("Endi rasm yuklashingiz mumkin."); },
+    });
+    return false;
+  }
+
+  function resetDesign(){
+    session.started = false; session.saved = false;
+    state.imageSrc = ''; state.imageObj = null;
+    $('constructorDropText').textContent = DROP_DEFAULT_TEXT;
+    $('constructorImageInput').value = '';
+  }
+
+  /* Kirish holati o'zgarganda (main.js "lg:auth" hodisasi): boshqa akkaunt =
+     alohida limit, chiqib ketilsa dizayn tozalanadi. Ism o'zgarishi (bir xil id) hech narsani buzmaydi. */
+  document.addEventListener('lg:auth', (e) => {
+    const next = e.detail || null;
+    const changed = ((customer && customer.id) || null) !== ((next && next.id) || null);
+    customer = next;
+    if(changed){
+      resetDesign();
+      limit = { loaded: false, allowed: true, hours: limit.hours, until: 0 };
+      clearInterval(limitTick); limitTick = null;
+      renderStage();
+      if(customer) loadLimit();
+    }
+    renderLimit();
+  });
+  document.addEventListener('lg:ready', () => {
+    authReady = true;
+    customer = (typeof currentCustomer === 'function') ? currentCustomer() : customer;
+    if(customer && !limit.loaded) loadLimit();
+    renderLimit();
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if(session.started && state.imageObj && !session.saved){ e.preventDefault(); e.returnValue = ''; }
+  });
 
   function renderSizes(){
     const box = $('constructorSizes');
@@ -670,9 +800,29 @@ document.addEventListener("DOMContentLoaded",()=>{
   const fileInput = $('constructorImageInput');
   const dropLabel = $('constructorDropLabel');
 
-  function handleFile(file){
+  let uploading = false;
+
+  function readAsDataURL(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Rasmni o'qib bo'lmadi."));
+      reader.readAsDataURL(file);
+    });
+  }
+  function loadImage(src){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Bu rasmni ochib bo'lmadi. Boshqa rasm tanlang."));
+      img.src = src;
+    });
+  }
+
+  async function handleFile(file){
     $('constructorError').textContent = '';
-    if(!file) return;
+    if(!file || uploading) return;
+    if(!customer){ requireLogin(); return; }
     if(!/^image\/(jpeg|png|webp)$/.test(file.type)){
       $('constructorError').textContent = "Faqat JPG, PNG yoki WEBP rasm formatlariga ruxsat bor.";
       return;
@@ -685,23 +835,59 @@ document.addEventListener("DOMContentLoaded",()=>{
       $('constructorError').textContent = "Avval yuqoridan o'lchamni tanlang.";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      state.imageSrc = reader.result;
+    if(!session.started && limit.loaded && !limit.allowed){
+      $('constructorError').textContent = blockedMessage();
+      return;
+    }
+
+    uploading = true;
+    try{
+      // Avval rasm yaroqli ekani tekshiriladi -- limit faqat yaroqli rasm uchun sarflanadi.
+      const dataUrl = await readAsDataURL(file);
+      const img = await loadImage(dataUrl);
+
+      if(!session.started){
+        const r = await api('/constructor/start', { method: 'POST' });
+        if(!r.allowed){
+          applyLimit(r);
+          $('constructorError').textContent = blockedMessage();
+          return;
+        }
+        session.started = true;
+        session.saved = false;
+        applyLimit({ allowed: false, limit_hours: r.limit_hours, retry_after_seconds: r.limit_hours * 3600 });
+      }
+
+      state.imageSrc = dataUrl;
+      state.imageObj = img;
       $('constructorDropText').textContent = file.name;
-      const img = new Image();
-      img.onload = () => { state.imageObj = img; renderStage(); };
-      img.src = state.imageSrc;
-    };
-    reader.readAsDataURL(file);
+      renderStage();
+      renderLimit();
+    }catch(err){
+      if(err && err.status !== 401) $('constructorError').textContent = err.message || "Rasmni yuklab bo'lmadi.";
+    }finally{
+      uploading = false;
+    }
   }
 
-  fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files[0];
+    await handleFile(f);
+    fileInput.value = ''; // shu rasmni qayta tanlash ham "change" bersin
+  });
+  // Kirmagan bo'lsa yoki limit tugagan bo'lsa fayl oynasi umuman ochilmaydi.
+  dropLabel.addEventListener('click', (e) => {
+    if(!customer){ e.preventDefault(); requireLogin(); return; }
+    if(!session.started && limit.loaded && !limit.allowed){
+      e.preventDefault();
+      $('constructorError').textContent = blockedMessage();
+    }
+  });
   ['dragover','dragenter'].forEach(evt => dropLabel.addEventListener(evt, (e) => { e.preventDefault(); dropLabel.classList.add('drag'); }));
   ['dragleave','drop'].forEach(evt => dropLabel.addEventListener(evt, (e) => { e.preventDefault(); dropLabel.classList.remove('drag'); }));
   dropLabel.addEventListener('drop', (e) => {
     const f = e.dataTransfer.files[0];
-    if(f){ fileInput.files = e.dataTransfer.files; handleFile(f); }
+    if(f) handleFile(f);
   });
 
   /* "Telegramga yuborish" -- joriy ko'rinishni (barcha panellarga bo'lib
@@ -814,6 +1000,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
       const result = await api('/constructor/share', { method: 'POST', body: formData });
       window.open(result.telegram_url, '_blank', 'noopener');
+      session.saved = true;
     }catch(err){
       errBox.textContent = err.message || "Yuborishda xatolik yuz berdi.";
     }finally{
@@ -841,6 +1028,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
+      session.saved = true;
     }catch(err){
       errBox.textContent = err.message || "Yuklab olishda xatolik yuz berdi.";
     }finally{
@@ -882,6 +1070,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     renderStage();
   }
 
+  renderLimit();
+  if(customer) loadLimit();
   loadSizes();
 })();
 </script>

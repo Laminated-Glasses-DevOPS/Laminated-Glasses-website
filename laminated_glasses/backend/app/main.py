@@ -16,26 +16,19 @@ from urllib.parse import unquote_plus
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
-from . import cleanup, config, honeypot_state, models, security, shield, utils
+from . import cleanup, config, honeypot_state, migrations, models, security, shield, utils
 from .database import Base, SessionLocal, engine
 from .routers import admin, public
 
 Base.metadata.create_all(bind=engine)
-# Existing SQLite installations: add the gallery column without losing products.
-try:
-    with engine.begin() as conn:
-        conn.exec_driver_sql("ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
-except Exception:
-    pass
-# Existing SQLite installations: add the pane-count column (necha oynaga
-# bo'linishi) without losing sizes admin already created.
-try:
-    with engine.begin() as conn:
-        conn.exec_driver_sql("ALTER TABLE constructor_sizes ADD COLUMN pane_count INTEGER NOT NULL DEFAULT 1")
-except Exception:
-    pass
+# Mavjud SQLite bazalar uchun yangi ustun/indekslarni qo'shadi (mahsulot
+# galereyasi, oyna soni, Google orqali kirish maydonlari) -- ma'lumot
+# yo'qolmaydi. Batafsil: migrations.py
+migrations.run_migrations(engine)
 
 app = FastAPI(
     docs_url=None, redoc_url=None, openapi_url=None,
@@ -53,11 +46,28 @@ app.add_middleware(
 )
 
 
+# Matn/JSON/JS/CSS javoblarini siqadi (mobil internetda sezilarli tezroq).
+app.add_middleware(GZipMiddleware, minimum_size=800)
+
+
 @app.middleware("http")
 async def add_security_headers(request, call_next):
     response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    h = response.headers
+    h["X-Content-Type-Options"] = "nosniff"
+    h["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Clickjacking: sayt boshqa saytning iframe'iga joylanmasin.
+    h["X-Frame-Options"] = "SAMEORIGIN"
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    h["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"  # Google kirish oynasi uchun
+    # HTTPS orqali kirilganda brauzer keyingi safar ham faqat HTTPS ishlatsin.
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if proto == "https":
+        h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Admin panel va API javoblari keshlanmasin.
+    path = request.url.path
+    if path.startswith("/api/admin") or path == "/admin":
+        h["Cache-Control"] = "no-store"
     return response
 
 
@@ -208,6 +218,15 @@ app.include_router(admin.router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():
+    """Bazaga haqiqatan ulanib ko'radi -- monitoring (UptimeRobot va h.k.)
+    baza ishdan chiqqanini 503 orqali ko'radi."""
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "db_error"})
+    finally:
+        db.close()
     return {"status": "ok", "service": "laminated-glasses-api"}
 
 
@@ -242,6 +261,26 @@ def seed_default_data() -> None:
         utils.purge_expired_cart_items(db)
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def warn_if_cors_open() -> None:
+    if "*" in config.ALLOWED_ORIGINS:
+        print("-" * 64)
+        print("  ESLATMA: ALLOWED_ORIGINS=* (hamma saytga ochiq). Frontend shu")
+        print("  serverdan beriladi, shuning uchun production'da buni o'z")
+        print("  domeningizga o'zgartiring: ALLOWED_ORIGINS=https://domen.uz")
+        print("-" * 64)
+
+
+@app.on_event("startup")
+def warn_if_google_not_configured() -> None:
+    if not config.GOOGLE_CLIENT_ID:
+        print("!" * 64)
+        print("  OGOHLANTIRISH: GOOGLE_CLIENT_ID sozlanmagan -- mijozlar Google")
+        print("  orqali kira olmaydi (savatga qo'shish ishlamaydi). .env yoki")
+        print("  muhit o'zgaruvchilariga GOOGLE_CLIENT_ID ni yozing.")
+        print("!" * 64)
 
 
 @app.on_event("startup")

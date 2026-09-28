@@ -11,9 +11,25 @@ const API_BASE_URL = (() => {
 
 const MEDIA_BASE = API_BASE_URL.replace(/\/api$/, "");
 const DEVICE_KEY = "lg_device_id";
+const TOKEN_KEY = "lg_customer_token";
+
+/* Sessiya tokeni (Google orqali kirgandan keyin server beradi). Brauzerda
+   saqlash cheklangan bo'lishi mumkin (maxfiy rejim) — xato bo'lsa sayt
+   ishlashda davom etadi, faqat sessiya sahifa yopilguncha turadi. */
+function loadToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || null; } catch (_) { return null; }
+}
+function saveToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch (_) { /* e'tiborsiz */ }
+}
 
 const state = {
   deviceId: null,
+  token: loadToken(),
+  googleClientId: "",
   customer: null,
   products: null,
   categories: [],
@@ -23,6 +39,7 @@ const state = {
   cartTtlDays: 7,
   activeProduct: null,
   pendingAddProductId: null,
+  afterLogin: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -48,6 +65,7 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
       ...(options.headers || {}),
     },
   });
@@ -65,6 +83,9 @@ async function api(path, options = {}) {
     const message = data && data.detail ? data.detail : `Server xatosi (${res.status})`;
     const error = new Error(typeof message === "string" ? message : "Xatolik yuz berdi.");
     error.status = res.status;
+    // Sessiya tugagan yoki yaroqsiz: mijozni chiqarib yuboramiz, keyingi
+    // "Savatga" bosilganda Google oynasi qayta ochiladi.
+    if (res.status === 401 && state.token) endSession(false);
     throw error;
   }
   return data;
@@ -96,15 +117,24 @@ function lockScroll(locked) {
   document.body.classList.toggle("locked", locked);
 }
 
-/* Ismni so'rash — endi saytga kirganda EMAS, balki foydalanuvchi birinchi
-   marta "Savatga" tugmasini bosganda, va faqat BIR MAROTABA ochiladi.
-   Ism qayd qilingach, uni o'zgartirish imkoni berilmaydi. */
+/* Google orqali kirish — "Savatga" tugmasi bosilganda, agar foydalanuvchi
+   hali kirmagan bo'lsa ochiladi. Ism so'ralmaydi: Google tokeni serverda
+   tekshiriladi (/api/auth/google), server o'z sessiya tokenini beradi. */
 
-function openGate(pendingProductId = null) {
+const GATE_DEFAULT_TEXT =
+  "Mahsulotni savatga qo'shish uchun Google akkauntingiz bilan kiring. Ismingiz Gmail akkauntingizdan avtomatik olinadi — buyurtmangiz shu ism bilan qayd qilinadi, savatingiz esa istalgan qurilmada saqlanib turadi.";
+
+/* opts.text -- oynadagi tushuntirish matni (masalan konstruktor uchun boshqacha),
+   opts.onSuccess -- kirish (va ism kiritish) muvaffaqiyatli tugagach chaqiriladi. */
+function openGate(pendingProductId = null, opts = {}) {
   state.pendingAddProductId = pendingProductId;
+  state.afterLogin = typeof opts.onSuccess === "function" ? opts.onSuccess : null;
+  const intro = el("gate").querySelector(".gate-card p:not(.gate-note)");
+  if (intro) intro.textContent = opts.text || GATE_DEFAULT_TEXT;
+  el("gateError").textContent = "";
   el("gate").classList.add("open");
   lockScroll(true);
-  setTimeout(() => el("gateName").focus(), 120);
+  renderGoogleButton();
 }
 
 function closeGate() {
@@ -114,53 +144,423 @@ function closeGate() {
   }
 }
 
-function applyCustomer(customer) {
-  state.customer = customer;
-  el("userName").textContent = customer.name;
-  el("userInitial").textContent = customer.name.trim().charAt(0).toUpperCase();
-  el("userChip").title = customer.name;
+el("gateCancel").addEventListener("click", () => {
+  state.pendingAddProductId = null;
+  state.afterLogin = null;
+  closeGate();
+});
+
+function paintAvatar(node, customer) {
+  const displayName = (customer && (customer.name || customer.email)) || "?";
+  node.textContent = displayName.trim().charAt(0).toUpperCase();
+  if (customer && customer.picture_url) {
+    const img = new Image();
+    img.alt = "";
+    img.referrerPolicy = "no-referrer"; // Google rasmlari referersiz ochilganda ishonchliroq
+    img.onload = () => { node.textContent = ""; node.appendChild(img); };
+    img.src = customer.picture_url;
+  }
 }
 
-el("gateForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = el("gateName");
-  const errorEl = el("gateError");
-  const name = input.value.trim();
+function applyCustomer(customer) {
+  state.customer = customer;
+  const chip = el("userChip");
+  const displayName = customer.name || customer.email || "?";
+  el("userName").textContent = displayName;
+  chip.title = `${displayName} — profil`;
+  chip.setAttribute("aria-label", "Profil");
+  paintAvatar(el("userInitial"), customer);
+  chip.hidden = false;
+  // Boshqa skriptlar (masalan konstruktor sahifasi) kirish holatini shu orqali biladi.
+  document.dispatchEvent(new CustomEvent("lg:auth", { detail: customer }));
+}
 
-  if (name.length < 2) {
-    errorEl.textContent = "Ismingizni to'liqroq yozing (kamida 2 ta harf).";
-    input.focus();
+/* Boshqa skriptlar (masalan constructor.html) uchun kichik yordamchilar. */
+function currentCustomer() { return state.customer; }
+function isAuthChecked() { return !!state.authChecked; }
+
+/* Sessiyani tugatish. `manual` = foydalanuvchi o'zi "chiqish" bosdi. */
+function endSession(manual = true) {
+  state.token = null;
+  state.customer = null;
+  state.cart = { items: [], total_amount: 0, total_quantity: 0 };
+  saveToken(null);
+  el("userChip").hidden = true;
+  try { window.google?.accounts?.id?.disableAutoSelect(); } catch (_) { /* e'tiborsiz */ }
+  closeProfile();
+  closeNameModal();
+  document.dispatchEvent(new CustomEvent("lg:auth", { detail: null }));
+  renderCart();
+  if (manual) {
+    closeCart();
+    showToast("Akkauntdan chiqdingiz.");
+  } else {
+    showToast("Sessiya tugadi. Qaytadan Google orqali kiring.", true);
+  }
+}
+
+/* ---------- Akkaunt oynalari: ism so'rash va profil ----------
+   Oynalar HTML'ga qo'lda yozilmaydi -- bu yerdan bir marta yaratiladi, shu
+   sababli barcha sahifalarda (bosh sahifa, mahsulotlar, konstruktor...)
+   bir xil ishlaydi. Stillar: style.css (.lg-overlay, .lg-card ...). */
+
+function formatWait(seconds) {
+  const total = Math.max(1, Math.round(Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h} soat ${m} daqiqa` : `${h} soat`;
+  return `${Math.max(1, m)} daqiqa`;
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+  if (isNaN(d)) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+const NAME_MIN = 2;
+const NAME_MAX = 60;
+function validateNameClient(value) {
+  const name = (value || "").replace(/\s+/g, " ").trim();
+  if (name.length < NAME_MIN) return { error: "Ism kamida 2 ta belgidan iborat bo'lsin." };
+  if (name.length > NAME_MAX) return { error: "Ism 60 ta belgidan oshmasin." };
+  if (!/\p{L}/u.test(name)) return { error: "Ismda kamida bitta harf bo'lishi kerak." };
+  if (!/^[\p{L}\p{N}\s'‘’ʻʼ´`.\-]+$/u.test(name)) {
+    return { error: "Ismda faqat harflar, bo'sh joy, apostrof va tire bo'lishi mumkin." };
+  }
+  return { name };
+}
+
+const LOCK_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+let accountUiBuilt = false;
+function ensureAccountUI() {
+  if (accountUiBuilt) return;
+  accountUiBuilt = true;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+  <div class="lg-overlay" id="nameModal" role="dialog" aria-modal="true" aria-labelledby="nameModalTitle">
+    <form class="lg-card lg-center" id="nameForm" novalidate>
+      <div class="lg-avatar lg-avatar-lg" id="nameAvatar"></div>
+      <h2 id="nameModalTitle">Ismingizni kiriting</h2>
+      <p class="lg-sub">Google akkaunt tanlandi: <strong id="nameEmail"></strong>.<br />Buyurtmalaringiz shu ism bilan qayd qilinadi.</p>
+      <label class="lg-field">
+        <span>Ismingiz</span>
+        <input id="nameInput" type="text" maxlength="${NAME_MAX}" autocomplete="name" placeholder="Masalan: Ali Valiyev" />
+      </label>
+      <div class="lg-error" id="nameError" role="alert"></div>
+      <button class="btn btn-primary btn-block" id="nameSubmit" type="submit">Davom etish</button>
+      <p class="lg-hint">Ismni keyinroq profilingizdan o'zgartirishingiz mumkin. Email o'zgarmaydi.</p>
+    </form>
+  </div>
+
+  <div class="lg-overlay" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+    <div class="lg-card lg-profile">
+      <button class="lg-close" id="profileClose" type="button" aria-label="Yopish">✕</button>
+      <div class="lg-profile-head">
+        <div class="lg-avatar lg-avatar-lg" id="profileAvatar"></div>
+        <div>
+          <h2 id="profileTitle">Profil</h2>
+          <p class="lg-sub" id="profileSince"></p>
+        </div>
+      </div>
+      <form id="profileForm" novalidate>
+        <label class="lg-field">
+          <span>Ism</span>
+          <input id="profileName" type="text" maxlength="${NAME_MAX}" autocomplete="name" />
+        </label>
+        <div class="lg-field lg-locked">
+          <span>Email (Google akkaunt)</span>
+          <div class="lg-locked-box">
+            <input id="profileEmail" type="text" readonly tabindex="-1" aria-readonly="true" />
+            ${LOCK_ICON}
+          </div>
+          <small>Email Google akkauntingizdan olinadi va o'zgartirilmaydi.</small>
+        </div>
+        <div class="lg-error" id="profileError" role="alert"></div>
+        <button class="btn btn-primary btn-block" id="profileSave" type="submit" disabled>Saqlash</button>
+      </form>
+      <div class="lg-info">
+        <div class="lg-info-row"><span>Konstruktor</span><strong id="profileConstructor">—</strong></div>
+      </div>
+      <div class="lg-logout" id="profileLogoutArea"></div>
+    </div>
+  </div>`;
+  while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
+
+  /* Ism so'rash oynasi: yopib bo'lmaydi (Esc/tashqariga bosish ishlamaydi) —
+     ism kiritilmaguncha davom etilmaydi. */
+  el("nameForm").addEventListener("submit", onNameSubmit);
+  el("nameInput").addEventListener("input", () => { el("nameError").textContent = ""; });
+
+  /* Profil oynasi */
+  el("profileClose").addEventListener("click", closeProfile);
+  el("profileModal").addEventListener("click", (e) => { if (e.target === el("profileModal")) closeProfile(); });
+  el("profileName").addEventListener("input", () => {
+    el("profileError").textContent = "";
+    updateProfileSaveState();
+  });
+  el("profileForm").addEventListener("submit", onProfileSubmit);
+  renderLogoutArea(false);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && el("profileModal").classList.contains("open")) closeProfile();
+  });
+}
+
+function overlayOpen(id) {
+  ensureAccountUI();
+  el(id).classList.add("open");
+  lockScroll(true);
+}
+function overlayClose(id) {
+  const node = el(id);
+  if (!node || !node.classList.contains("open")) return;
+  node.classList.remove("open");
+  if (
+    !document.querySelector(".modal-overlay.open, .lg-overlay.open") &&
+    !el("cartDrawer").classList.contains("open") &&
+    !el("gate").classList.contains("open")
+  ) {
+    lockScroll(false);
+  }
+}
+
+/* --- Ism so'rash (Google akkaunt tanlangandan keyin) --- */
+
+let nameModalResolve = null;
+let nameModalPromise = null;
+
+function askForName(customer) {
+  if (nameModalPromise) return nameModalPromise;
+  ensureAccountUI();
+  paintAvatar(el("nameAvatar"), customer);
+  el("nameEmail").textContent = customer.email || "";
+  el("nameInput").value = customer.name || "";
+  el("nameError").textContent = "";
+  el("nameSubmit").disabled = false;
+  nameModalPromise = new Promise((resolve) => { nameModalResolve = resolve; });
+  overlayOpen("nameModal");
+  setTimeout(() => { el("nameInput").focus(); el("nameInput").select(); }, 60);
+  return nameModalPromise;
+}
+
+function finishNameModal(result) {
+  overlayClose("nameModal");
+  const resolve = nameModalResolve;
+  nameModalResolve = null;
+  nameModalPromise = null;
+  if (resolve) resolve(result);
+}
+
+function closeNameModal() {
+  if (nameModalPromise) finishNameModal(null); // sessiya tugagan
+}
+
+async function onNameSubmit(e) {
+  e.preventDefault();
+  const checked = validateNameClient(el("nameInput").value);
+  if (checked.error) { el("nameError").textContent = checked.error; return; }
+  const btn = el("nameSubmit");
+  btn.disabled = true;
+  try {
+    const updated = await api("/auth/profile", { method: "PUT", body: JSON.stringify({ name: checked.name }) });
+    applyCustomer(updated);
+    finishNameModal(updated);
+  } catch (err) {
+    if (err.status === 401) return; // api() sessiyani tugatdi, endSession oynani yopdi
+    el("nameError").textContent = err.message;
+    btn.disabled = false;
+  }
+}
+
+/* --- Profil oynasi --- */
+
+function updateProfileSaveState() {
+  const current = (state.customer && state.customer.name) || "";
+  const typed = el("profileName").value.replace(/\s+/g, " ").trim();
+  el("profileSave").disabled = !typed || typed === current;
+}
+
+function renderLogoutArea(confirming) {
+  const area = el("profileLogoutArea");
+  if (!confirming) {
+    area.innerHTML = '<button class="btn btn-ghost btn-block" id="profileLogout" type="button">Akkauntdan chiqish</button>';
+    el("profileLogout").addEventListener("click", () => renderLogoutArea(true));
+    return;
+  }
+  area.innerHTML = `
+    <p class="lg-confirm-text">Akkauntdan chiqasizmi? Savatingiz saqlanib qoladi — qayta kirganingizda tiklanadi.</p>
+    <div class="lg-confirm-row">
+      <button class="btn btn-ghost" id="profileLogoutNo" type="button">Bekor qilish</button>
+      <button class="btn lg-btn-danger" id="profileLogoutYes" type="button">Ha, chiqish</button>
+    </div>`;
+  el("profileLogoutNo").addEventListener("click", () => renderLogoutArea(false));
+  el("profileLogoutYes").addEventListener("click", () => endSession(true));
+}
+
+async function fillConstructorStatus() {
+  const node = el("profileConstructor");
+  node.textContent = "…";
+  try {
+    const limit = await api("/constructor/limit");
+    node.textContent = limit.allowed
+      ? "bugun foydalanish mumkin"
+      : `yana ${formatWait(limit.retry_after_seconds)} dan so'ng`;
+  } catch (_) {
+    node.textContent = "—";
+  }
+}
+
+function openProfile() {
+  const customer = state.customer;
+  if (!customer) return;
+  ensureAccountUI();
+  paintAvatar(el("profileAvatar"), customer);
+  el("profileName").value = customer.name || "";
+  el("profileEmail").value = customer.email || "";
+  el("profileSince").textContent = `Ro'yxatdan o'tgan: ${formatDate(customer.created_at)}`;
+  el("profileError").textContent = "";
+  renderLogoutArea(false);
+  updateProfileSaveState();
+  overlayOpen("profileModal");
+  fillConstructorStatus();
+}
+
+function closeProfile() {
+  if (accountUiBuilt) overlayClose("profileModal");
+}
+
+async function onProfileSubmit(e) {
+  e.preventDefault();
+  const checked = validateNameClient(el("profileName").value);
+  if (checked.error) { el("profileError").textContent = checked.error; return; }
+  const btn = el("profileSave");
+  btn.disabled = true;
+  try {
+    const updated = await api("/auth/profile", { method: "PUT", body: JSON.stringify({ name: checked.name }) });
+    applyCustomer(updated);
+    el("profileName").value = updated.name;
+    updateProfileSaveState();
+    showToast("Ism yangilandi.");
+  } catch (err) {
+    if (err.status === 401) return;
+    el("profileError").textContent = err.message;
+    updateProfileSaveState();
+  }
+}
+
+el("userChip").addEventListener("click", openProfile);
+
+let gsiScriptPromise = null;
+let gsiInitialized = false;
+
+function loadGoogleScript() {
+  if (window.google && window.google.accounts && window.google.accounts.id) return Promise.resolve();
+  if (gsiScriptPromise) return gsiScriptPromise;
+  gsiScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      gsiScriptPromise = null; // keyingi urinishda qayta yuklansin
+      reject(new Error("Google xizmatini yuklab bo'lmadi. Internetni tekshirib, qayta urinib ko'ring."));
+    };
+    document.head.appendChild(script);
+  });
+  return gsiScriptPromise;
+}
+
+async function renderGoogleButton() {
+  const holder = el("googleBtn");
+  const errorEl = el("gateError");
+  holder.innerHTML = "";
+
+  if (!state.googleClientId) {
+    // /site javobi hali kelmagan bo'lishi mumkin — bir marta qayta so'raymiz.
+    const site = await api("/site").catch(() => null);
+    if (site && site.google_client_id) state.googleClientId = site.google_client_id;
+  }
+  if (!state.googleClientId) {
+    errorEl.textContent = "Google orqali kirish hozircha sozlanmagan. Iltimos, keyinroq urinib ko'ring.";
     return;
   }
 
-  errorEl.textContent = "";
-  const btn = el("gateBtn");
-  btn.disabled = true;
-  btn.textContent = "Davom etilmoqda...";
-
   try {
-    const customer = await api("/customer", {
-      method: "POST",
-      body: JSON.stringify({ device_id: state.deviceId, name }),
+    await loadGoogleScript();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    return;
+  }
+
+  if (!gsiInitialized) {
+    window.google.accounts.id.initialize({
+      client_id: state.googleClientId,
+      callback: onGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
     });
-    applyCustomer(customer);
+    gsiInitialized = true;
+  }
+  const width = Math.max(200, Math.min(340, holder.clientWidth || 300));
+  window.google.accounts.id.renderButton(holder, {
+    type: "standard",
+    theme: "outline",
+    size: "large",
+    text: "continue_with",
+    shape: "pill",
+    logo_alignment: "left",
+    width,
+  });
+}
+
+async function onGoogleCredential(response) {
+  const errorEl = el("gateError");
+  errorEl.textContent = "";
+  if (!response || !response.credential) {
+    errorEl.textContent = "Google javob bermadi. Qayta urinib ko'ring.";
+    return;
+  }
+  el("googleBtn").classList.add("busy");
+  try {
+    const auth = await api("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ credential: response.credential, device_id: state.deviceId }),
+    });
+    state.token = auth.access_token;
+    saveToken(auth.access_token);
+    applyCustomer(auth.customer);
     closeGate();
-    showToast(`Xush kelibsiz, ${customer.name}!`);
+
+    // Google akkaunt tanlangach ism so'raladi (bir marta; keyin profildan
+    // o'zgartiriladi). Ism kiritilmaguncha davom etilmaydi.
+    // Ism Gmail (Google) akkauntidan avtomatik olinadi — alohida so'ralmaydi.
+    const customer = auth.customer;
+    const firstName = (customer.name || "").split(" ")[0];
+    showToast(auth.is_new ? `Xush kelibsiz, ${firstName}!` : `Qaytganingiz bilan, ${firstName}!`);
 
     const pendingId = state.pendingAddProductId;
+    const afterLogin = state.afterLogin;
     state.pendingAddProductId = null;
+    state.afterLogin = null;
     if (pendingId) {
       await addToCart(pendingId);
     } else {
       await refreshCart();
     }
+    if (afterLogin) {
+      try { afterLogin(customer); } catch (_) { /* e'tiborsiz */ }
+    }
   } catch (err) {
     errorEl.textContent = err.message;
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Davom etish";
+    el("googleBtn").classList.remove("busy");
   }
-});
+}
 
 /* Katalog */
 
@@ -467,7 +867,7 @@ function renderCart() {
 async function refreshCart() {
   if (!state.customer) return;
   try {
-    state.cart = await api(`/cart/${state.deviceId}`);
+    state.cart = await api("/cart");
     state.cartTtlDays = state.cart.cart_ttl_days;
     renderCart();
     if (state.cart.removed_expired > 0) {
@@ -476,9 +876,8 @@ async function refreshCart() {
       );
     }
   } catch (err) {
-    if (err.status === 404) {
-      state.customer = null;
-    }
+    // 401 bo'lsa api() sessiyani o'zi tugatadi; boshqa xatolarda savat
+    // avvalgi holatida qoladi.
   }
 }
 
@@ -490,7 +889,7 @@ async function addToCart(productId) {
   try {
     state.cart = await api("/cart", {
       method: "POST",
-      body: JSON.stringify({ device_id: state.deviceId, product_id: productId, quantity: 1 }),
+      body: JSON.stringify({ product_id: productId, quantity: 1 }),
     });
     renderCart();
     showToast(`Savatga qo'shildi. ${state.cartTtlDays} kun davomida saqlanadi.`);
@@ -512,7 +911,7 @@ async function changeQuantity(itemId, delta) {
   try {
     state.cart = await api(`/cart/item/${itemId}`, {
       method: "PUT",
-      body: JSON.stringify({ device_id: state.deviceId, quantity: next }),
+      body: JSON.stringify({ quantity: next }),
     });
     renderCart();
   } catch (err) {
@@ -522,10 +921,7 @@ async function changeQuantity(itemId, delta) {
 
 async function removeItem(itemId) {
   try {
-    state.cart = await api(
-      `/cart/item/${itemId}?device_id=${encodeURIComponent(state.deviceId)}`,
-      { method: "DELETE" }
-    );
+    state.cart = await api(`/cart/item/${itemId}`, { method: "DELETE" });
     renderCart();
     showToast("Savatdan o'chirildi.");
   } catch (err) {
@@ -534,9 +930,9 @@ async function removeItem(itemId) {
 }
 
 el("clearCartBtn").addEventListener("click", async () => {
-  if (!confirm("Savatdagi hamma narsa o'chirilsinmi?")) return;
+  if (!(await lgConfirm({ tone: "danger", title: "Savatni bo'shatish", message: "Savatdagi hamma narsa o'chiriladi.", confirmText: "Ha, bo'shatish" }))) return;
   try {
-    state.cart = await api(`/cart/${state.deviceId}`, { method: "DELETE" });
+    state.cart = await api("/cart", { method: "DELETE" });
     renderCart();
     showToast("Savat bo'shatildi.");
   } catch (err) {
@@ -551,7 +947,7 @@ function openCart() {
   if (state.customer) {
     refreshCart();
   } else {
-    // Hali ism kiritilmagan — savat hali bo'sh, ism so'ralmaydi.
+    // Hali kirilmagan — savat bo'sh; Google oynasi faqat "Savatga" bosilganda chiqadi.
     state.cart = { items: [], total_amount: 0, total_quantity: 0 };
     renderCart();
   }
@@ -607,10 +1003,7 @@ el("checkoutBtn").addEventListener("click", async () => {
   btn.textContent = "Rasmiylashtirilmoqda...";
 
   try {
-    const result = await api("/checkout", {
-      method: "POST",
-      body: JSON.stringify({ device_id: state.deviceId }),
-    });
+    const result = await api("/checkout", { method: "POST" });
 
     el("orderCode").textContent = result.order_code;
     el("checkoutText").textContent =
@@ -660,6 +1053,11 @@ document.querySelectorAll(".modal-overlay").forEach((overlay) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   document.querySelectorAll(".modal-overlay.open").forEach((m) => closeModal(m.id));
+  if (el("gate").classList.contains("open")) {
+    state.pendingAddProductId = null;
+    state.afterLogin = null;
+    closeGate();
+  }
   closeCart();
   closeMobileNav();
 });
@@ -679,26 +1077,34 @@ async function init() {
   // Tezlik uchun: sayt sozlamalari, mijoz, kategoriyalar va mahsulotlar
   // ketma-ket emas, BIR VAQTDA so'raladi — bu birinchi ko'rinishgacha
   // bo'lgan vaqtni sezilarli qisqartiradi, ayniqsa sekin mobil tarmoqda.
-  const [siteResult, customerResult, categoriesResult] = await Promise.all([
+  const [siteResult, categoriesResult] = await Promise.all([
     api("/site").catch(() => null),
-    api(`/customer/${state.deviceId}`).catch(() => null),
     api("/categories").catch(() => []),
     loadProducts(),
   ]);
 
   if (siteResult) {
     state.cartTtlDays = siteResult.cart_ttl_days;
+    state.googleClientId = siteResult.google_client_id || "";
     el("statCartDays").textContent = siteResult.cart_ttl_days;
     if (siteResult.site_title) document.title = `${siteResult.site_title} — rasmli oynalar`;
   }
 
-  // Sayt birinchi ochilganda ism SO'RALMAYDI: avval mahsulotlar va sayt
-  // ko'rsatiladi. Agar shu qurilma avval "Savatga" bosib, ismini kiritgan
-  // bo'lsa, sayt uni o'zi taniydi va savatini tiklaydi.
-  if (customerResult) {
-    applyCustomer(customerResult);
-    refreshCart();
+  // Sayt birinchi ochilganda hech narsa so'ralmaydi. Agar foydalanuvchi oldin
+  // Google orqali kirgan bo'lsa, saqlangan sessiya tekshiriladi va savati
+  // tiklanadi (token yaroqsiz bo'lsa api() uni o'zi tozalaydi).
+  if (state.token) {
+    try {
+      const me = await api("/auth/me");
+      applyCustomer(me);
+      refreshCart();
+    } catch (_) { /* sessiya yaroqsiz yoki tarmoq xatosi — mehmon sifatida davom etadi */ }
   }
+
+  // Kirish holati aniq bo'ldi (kirgan yoki mehmon) -- sahifalar shundan keyin
+  // "Google bilan kiring" kabi xabarlarni ko'rsatadi (yolg'on miltillashsiz).
+  state.authChecked = true;
+  document.dispatchEvent(new CustomEvent("lg:ready"));
 
   state.categories = categoriesResult || [];
   renderFilters();

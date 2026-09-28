@@ -1,6 +1,8 @@
 """Yordamchi funksiyalar: rasmlar, savat tozalash, buyurtma kodi, matn
 formatlash."""
 
+import re
+
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -176,3 +178,23 @@ def telegram_url(username: str, text: str = "") -> str:
     if not text:
         return base
     return f"{base}?text={quote(text)}"
+
+
+_NAME_ALLOWED = re.compile(r"^[\w\s'\u2018\u2019\u02bb\u02bc\u00b4`.\-]+$", re.UNICODE)
+
+
+def clean_person_name(raw: str) -> str:
+    """Foydalanuvchi kiritgan ismni tekshiradi va tozalaydi. Yaroqsiz bo'lsa
+    ValueError (matni foydalanuvchiga ko'rsatiladi) ko'taradi. Apostrof
+    (G'ayrat, O'tkir, Sa'dulla) va tire ruxsat etiladi; < > & \" kabi
+    belgilar yo'q -- ism Telegram xabari va admin panelga tushadi."""
+    name = " ".join((raw or "").split())
+    if len(name) < 2:
+        raise ValueError("Ism kamida 2 ta belgidan iborat bo'lsin.")
+    if len(name) > 60:
+        raise ValueError("Ism 60 ta belgidan oshmasin.")
+    if not any(ch.isalpha() for ch in name):
+        raise ValueError("Ismda kamida bitta harf bo'lishi kerak.")
+    if not _NAME_ALLOWED.match(name):
+        raise ValueError("Ismda faqat harflar, bo'sh joy, apostrof va tire bo'lishi mumkin.")
+    return name

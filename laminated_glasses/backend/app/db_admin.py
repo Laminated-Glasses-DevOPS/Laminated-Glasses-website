@@ -29,7 +29,7 @@ from typing import List
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from . import config, models
+from . import config, migrations, models
 from .database import Base, engine
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -218,21 +218,9 @@ def restore_database(uploaded_tmp_path: Path) -> dict:
     engine.dispose()
     try:
         shutil.copyfile(uploaded_tmp_path, db_path)
-        # Forward-compatible migratsiyalar (main.py bilan bir xil, yangi
-        # yuklangan baza eski versiyada yaratilgan bo'lishi mumkin).
-        with engine.begin() as conn:
-            try:
-                conn.exec_driver_sql(
-                    "ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'"
-                )
-            except Exception:
-                pass
-            try:
-                conn.exec_driver_sql(
-                    "ALTER TABLE constructor_sizes ADD COLUMN pane_count INTEGER NOT NULL DEFAULT 1"
-                )
-            except Exception:
-                pass
+        # Forward-compatible migratsiyalar (yangi yuklangan baza eski
+        # versiyada yaratilgan bo'lishi mumkin) -- migrations.py
+        migrations.run_migrations(engine)
         Base.metadata.create_all(bind=engine)
     except Exception as exc:
         # Nimadir noto'g'ri ketsa, xavfsizlik nusxasidan darhol tiklaymiz --

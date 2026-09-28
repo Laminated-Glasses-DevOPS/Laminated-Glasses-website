@@ -31,44 +31,62 @@ class SiteInfo(BaseModel):
 
     site_title: str
     cart_ttl_days: int
+    # Google Client ID ommaviy qiymat (brauzerdagi Google tugmasi uchun kerak);
+    # u backend sozlamasidan (GOOGLE_CLIENT_ID) olinadi, frontendda qotirilmaydi.
+    google_client_id: str = ""
 
 
-class CustomerIn(BaseModel):
-    device_id: str = Field(min_length=8, max_length=64)
-    name: str = Field(min_length=2, max_length=120)
+class GoogleLoginIn(BaseModel):
+    """Google tugmasi bosilgach brauzer olgan ID token (JWT)."""
 
-    @field_validator("name")
-    @classmethod
-    def normalize_name(cls, v: str) -> str:
-        v = _clean_name(v)
-        if len(v) < 2:
-            raise ValueError("Ism juda qisqa.")
-        return v
-
-    @field_validator("device_id")
-    @classmethod
-    def normalize_device(cls, v: str) -> str:
-        return v.strip()
+    credential: str = Field(min_length=20, max_length=8192)
+    # Faqat eski (ism bilan ro'yxatdan o'tgan) mijozning savatini yangi
+    # akkauntga ko'chirish uchun; ixtiyoriy.
+    device_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class CustomerOut(BaseModel):
     id: int
     name: str
-    device_id: str
+    email: Optional[str] = None
+    picture_url: Optional[str] = None
     created_at: datetime
+    # False bo'lsa frontend ism so'rash oynasini ochadi.
+    name_confirmed: bool = False
 
     class Config:
         from_attributes = True
 
 
+class ProfileUpdateIn(BaseModel):
+    """Profilda faqat ism o'zgaradi. Email bu yerda ATAYIN yo'q -- u Google'dan
+    keladi va foydalanuvchi o'zgartira olmaydi."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
+class ConstructorLimitOut(BaseModel):
+    """Konstruktor limiti holati (akkaunt bo'yicha)."""
+
+    allowed: bool          # hozir yangi foydalanishni boshlash mumkinmi
+    limit_hours: int       # limit oynasi (soat)
+    retry_after_seconds: int = 0  # allowed=False bo'lsa, qancha soniyadan keyin
+
+
+class AuthOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_days: int
+    is_new: bool
+    customer: CustomerOut
+
+
 class CartItemIn(BaseModel):
-    device_id: str = Field(min_length=8, max_length=64)
     product_id: int
     quantity: int = Field(default=1, ge=1, le=99)
 
 
 class CartQuantityIn(BaseModel):
-    device_id: str = Field(min_length=8, max_length=64)
     quantity: int = Field(ge=1, le=99)
 
 
@@ -91,10 +109,6 @@ class CartOut(BaseModel):
     total_amount: float
     cart_ttl_days: int
     removed_expired: int = 0
-
-
-class CheckoutIn(BaseModel):
-    device_id: str = Field(min_length=8, max_length=64)
 
 
 class CheckoutOut(BaseModel):
@@ -178,7 +192,31 @@ class TokenResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    new_password: str = Field(min_length=4, max_length=200)
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
+
+    @field_validator("new_password")
+    @classmethod
+    def strong_enough(cls, v: str) -> str:
+        if v.isdigit():
+            raise ValueError("Parol faqat raqamlardan iborat bo'lmasligi kerak.")
+        if len(set(v)) < 4:
+            raise ValueError("Parol juda oddiy: turli belgilardan foydalaning.")
+        if v.lower() in {"password", "12345678", "qwertyui", "admin123", "11111111"}:
+            raise ValueError("Bu parol juda keng tarqalgan. Boshqasini tanlang.")
+        return v
+
+
+class UpdateSiteRequest(BaseModel):
+    site_title: str = Field(min_length=2, max_length=200)
+
+    @field_validator("site_title")
+    @classmethod
+    def clean_title(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if len(v) < 2:
+            raise ValueError("Sayt nomi juda qisqa.")
+        return v
 
 
 class UpdateTelegramRequest(BaseModel):
@@ -367,15 +405,43 @@ class VisitIn(BaseModel):
 class DailyVisitPoint(BaseModel):
     date: str
     label: str
+    # Haqiqiy noyob odamlar: Google orqali kirgan odam qurilma sonidan
+    # qat'i nazar 1 ta, kirmagan mehmon -- qurilma bo'yicha 1 ta.
     unique_visitors: int
+    user_visitors: int = 0    # shundan Google orqali kirganlar
+    guest_visitors: int = 0   # shundan kirmagan mehmonlar
+    new_users: int = 0        # shu kuni ro'yxatdan o'tgan yangi foydalanuvchilar
+
+
+class RecentUserOut(BaseModel):
+    id: int
+    name: str
+    email: Optional[str] = None
+    picture_url: Optional[str] = None
+    login_count: int
+    last_login_at: Optional[datetime] = None
+    registered_at: Optional[datetime] = None
+
+    @field_serializer("last_login_at", "registered_at")
+    def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
+        return (value.isoformat() + "Z") if value else None
 
 
 class AnalyticsResponse(BaseModel):
     today_visitors: int
     yesterday_visitors: int
-    total_unique_devices: int
+    today_users: int = 0
+    today_guests: int = 0
+    total_unique_visitors: int = 0
     total_views: int
+    # Foydalanuvchilar (faqat Google orqali kirganlar)
+    total_users: int = 0
+    new_users_today: int = 0
+    new_users_yesterday: int = 0
+    new_users_7d: int = 0
+    active_users_7d: int = 0
     daily: List[DailyVisitPoint]
+    recent_users: List[RecentUserOut] = []
 
 
 class StatsResponse(BaseModel):
@@ -391,6 +457,7 @@ class StatsResponse(BaseModel):
     sold_orders: int
     sold_revenue: float
     sold_profit: float
+    total_users: int = 0
 
 
 class BackupFileOut(BaseModel):

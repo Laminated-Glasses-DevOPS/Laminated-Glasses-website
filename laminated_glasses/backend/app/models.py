@@ -57,11 +57,20 @@ class Product(Base):
 
 
 class Customer(Base):
-    """Saytga ismini kiritib kirgan foydalanuvchi.
+    """Google akkaunti orqali kirgan foydalanuvchi.
 
-    device_id -- brauzer birinchi marta ochilganda yaratiladigan va
-    localStorage da saqlanadigan yagona identifikator. Shu tufayli
-    foydalanuvchi ismini faqat bir marta kiritadi.
+    HAR BIR GOOGLE AKKAUNT = BITTA MIJOZ. Akkauntning o'zgarmas identifikatori
+    (`google_sub`, Google ID tokenidagi `sub`) unique -- shu sababli bir
+    akkauntdan 2-, 3-marta kirilganda yangi yozuv ochilmaydi: mavjud yozuv
+    topiladi, faqat `login_count` va `last_login_at` yangilanadi. Bir akkaunt
+    bir necha qurilmadan kirsa ham bitta mijoz (va bitta savat) bo'lib qoladi.
+    Email emas, aynan `sub` ishlatiladi -- email o'zgarishi mumkin, `sub` yo'q.
+
+    device_id -- eski (faqat ism kiritiladigan) tizimdan qolgan ustun. Ustun
+    NOT NULL/unique bo'lgani va SQLite'da uni o'zgartirib bo'lmagani uchun
+    Google mijozlarida "google:<sub>" qiymati yoziladi. Eski mijozlarda esa
+    asl qurilma identifikatori turadi (ular birinchi Google kirishida
+    savati va buyurtmalari bilan shu akkauntga biriktiriladi).
     """
 
     __tablename__ = "customers"
@@ -69,6 +78,25 @@ class Customer(Base):
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(String(64), unique=True, nullable=False, index=True)
     name = Column(String(120), nullable=False)
+
+    google_sub = Column(String(64), unique=True, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+    email_verified = Column(Integer, nullable=False, default=0, server_default="0")
+    picture_url = Column(String(500), nullable=True)
+    given_name = Column(String(120), nullable=True)
+    family_name = Column(String(120), nullable=True)
+    locale = Column(String(20), nullable=True)
+    # 1 = foydalanuvchi Google akkauntni tanlagach ismini o'zi kiritgan/tasdiqlagan.
+    # 0 bo'lsa keyingi kirishda ism so'raladi; 1 bo'lgach Google ismi uni
+    # qayta yozib yubormaydi (profilda o'zgartirilgan ism saqlanib qoladi).
+    name_confirmed = Column(Integer, nullable=False, default=0, server_default="0")
+    login_count = Column(Integer, nullable=False, default=0, server_default="0")
+    last_login_at = Column(DateTime, nullable=True)
+    # Google akkaunt shu mijozga BIRINCHI marta bog'langan payt (yangi
+    # foydalanuvchilar statistikasi shu bo'yicha; created_at eski, ism bilan
+    # ro'yxatdan o'tgan mijozlarda eskiroq bo'lishi mumkin).
+    google_registered_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -167,8 +195,8 @@ class VisitLog(Base):
     """Saytga tashriflarni hisoblash uchun jadval.
 
     Bitta qurilma (device_id) bir kunda bir necha marta kirsa ham, shu kun
-    uchun faqat bitta qator yoziladi -- shu tufayli statistikada "1 ta
-    qurilma = 1 ta ko'rish (view)" tamoyili saqlanadi. (device_id, visit_date)
+    uchun faqat bitta qator yoziladi. Google orqali kirgan odam esa qurilma
+    sonidan qat'i nazar (customer_id bo'yicha) 1 ta hisoblanadi. (device_id, visit_date)
     juftligi unique bo'lgani uchun takroriy yozuv bazada hech qachon
     hosil bo'lmaydi.
     """
@@ -181,6 +209,10 @@ class VisitLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(String(64), nullable=False, index=True)
     visit_date = Column(Date, nullable=False, index=True)
+    # Tashrif qilgan odam Google orqali kirgan bo'lsa -- uning mijoz ID'si.
+    # Statistikada "haqiqiy odam" = customer_id (bo'lsa), aks holda device_id:
+    # bir odam ikki qurilmadan kirsa ham 1 ta hisoblanadi.
+    customer_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -324,3 +356,19 @@ class SiteLink(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(40), unique=True, nullable=False, index=True)
     value = Column(String(500), nullable=False, default="")
+
+
+class ConstructorUsage(Base):
+    """Konstruktordan foydalanish jurnali -- LIMIT shu jadval asosida ishlaydi.
+
+    Har bir Google akkaunt (customer_id) uchun `used_at` dan boshlab
+    config.CONSTRUCTOR_LIMIT_HOURS (24) soat davomida yangi foydalanish
+    boshlab bo'lmaydi. Limit akkaunt bo'yicha alohida: bir odam boshqa
+    Gmail bilan kirsa, u akkaunt uchun o'z limiti bor. Muddati o'tgan
+    yozuvlar cleanup.py tomonidan tozalab turiladi."""
+
+    __tablename__ = "constructor_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    used_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
