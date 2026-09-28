@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import unquote_plus
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -216,18 +216,32 @@ app.include_router(public.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 
-@app.get("/api/health")
-def health_check():
-    """Bazaga haqiqatan ulanib ko'radi -- monitoring (UptimeRobot va h.k.)
-    baza ishdan chiqqanini 503 orqali ko'radi."""
+@app.api_route("/api/health", methods=["GET", "HEAD"], include_in_schema=False)
+def health_check(request: Request):
+    """Bazaga haqiqatan ulanib ko'radi.
+
+    GET ham, HEAD ham qabul qilinadi: UptimeRobot (bepul reja) sukut bo'yicha
+    HEAD yuboradi, Render'ning healthCheck'i esa GET. Ikkalasi ham baza
+    ishlayotgan bo'lsa 200 oladi, baza ishdan chiqsa 503. Javob keshlanmaydi,
+    shunda har bir ping haqiqatan serverga yetib boradi (Render uxlab
+    qolmasligi uchun)."""
+    headers = {"Cache-Control": "no-store"}
     db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
     except Exception:
-        return JSONResponse(status_code=503, content={"status": "db_error"})
+        if request.method == "HEAD":
+            return Response(status_code=503, headers=headers)
+        return JSONResponse(status_code=503, content={"status": "db_error"}, headers=headers)
     finally:
         db.close()
-    return {"status": "ok", "service": "laminated-glasses-api"}
+    if request.method == "HEAD":
+        return Response(status_code=200, headers=headers)
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ok", "service": "laminated-glasses-api"},
+        headers=headers,
+    )
 
 
 @app.on_event("startup")

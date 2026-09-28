@@ -111,7 +111,7 @@ def detect_xss(text: str) -> Optional[str]:
 # tugashi yoki boshqa naqshga mos kelishi mumkin, natijada haqiqiy mijoz
 # SQL Injection deb noto'g'ri bloklanardi. Token baribir imzo bo'yicha
 # serverda to'liq tekshiriladi (google_auth.py), matn sifatida ishlatilmaydi.
-SKIP_BODY_SCAN_PREFIXES = ("/uploads", "/api/constructor/share", "/api/auth/")
+SKIP_BODY_SCAN_PREFIXES = ("/uploads", "/api/constructor/share", "/api/auth/", "/api/health")
 
 
 def should_skip_scan(path: str) -> bool:
