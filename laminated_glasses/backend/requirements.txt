@@ -1,10 +1,17 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-SQLAlchemy==2.0.35
-python-jose[cryptography]==3.3.0
+# Patch-darajadagi xavfsizlik yangilanishlari avtomatik olinishi uchun "~=" ishlatilgan
+# (masalan fastapi~=0.115.0  ==  >=0.115.0,<0.116). Katta o'zgarishlar (minor/major)
+# o'z-o'zidan o'rnatilmaydi -- sayt kutilmaganda buzilmasligi uchun.
+# Yangilash: deploy/update.sh  (yoki: pip install -U -r requirements.txt)
+#
+# passlib + bcrypt: bu juftlik aniq versiyada qolishi SHART (bcrypt>=4.1 bilan
+# passlib ogohlantirish/xato beradi), shuning uchun "==". Python 3.13+ da
+# passlib ishlamaydi -- Python 3.10-3.12 ishlating.
+fastapi~=0.115.0
+uvicorn[standard]~=0.30.6
+SQLAlchemy~=2.0.35
+python-jose[cryptography]~=3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-python-multipart==0.0.9
-python-dotenv==1.0.1
-pydantic==2.9.2
-openpyxl==3.1.5
+python-multipart~=0.0.9
+python-dotenv~=1.0.1
+pydantic~=2.9.2

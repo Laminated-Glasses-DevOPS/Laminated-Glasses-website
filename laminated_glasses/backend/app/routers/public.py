@@ -652,7 +652,7 @@ async def share_constructor_preview(
     final_filename = utils.save_constructor_preview_image(final)
 
     settings = _settings(db)
-    base = str(request.base_url).rstrip("/")
+    base = config.PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
     original_url = f"{base}{utils.build_constructor_preview_url(original_filename)}"
     final_url = f"{base}{utils.build_constructor_preview_url(final_filename)}"
 

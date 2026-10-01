@@ -33,11 +33,17 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
-        value: "*"          # Deploy qilingach, buni haqiqiy domeningizga almashtiring
+        value: ""           # Bo'sh = CORS yopiq (frontend shu servisdan beriladi). Faqat boshqa domen kerak bo'lsa yozing
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "720"
+      # Render proksi orqasida ishlaydi: haqiqiy mijoz IP'si X-Forwarded-For'dan
+      # olinadi (ichki tarmoq proksilari ishonchli deb hisoblanadi).
       - key: TRUST_X_FORWARDED_FOR
-        value: "false"
+        value: "true"
+      - key: TRUSTED_PROXIES
+        value: "private"
+      - key: PUBLIC_BASE_URL
+        sync: false          # Masalan https://domen.uz yoki https://xxx.onrender.com
       - key: DEV_RELOAD
         value: "false"
       - key: DEFAULT_TELEGRAM_USERNAME
@@ -47,6 +53,8 @@ services:
       - key: CART_TTL_DAYS
         value: "7"
       - key: GOOGLE_CLIENT_ID
-        value: "535387790955-unh1vfogr38jfikfbltob6pvi8rtrgqn.apps.googleusercontent.com"
+        sync: false          # O'zingizning Google Client ID'ingizni Render panelida kiriting
+      - key: CONSTRUCTOR_LIMIT_HOURS
+        value: "24"
       - key: CUSTOMER_TOKEN_EXPIRE_DAYS
         value: "30"

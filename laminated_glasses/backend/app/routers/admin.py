@@ -411,7 +411,11 @@ def security_status(
         {
             "ok": "*" not in config.ALLOWED_ORIGINS,
             "label": "CORS cheklovi",
-            "detail": "Faqat ruxsat etilgan domenlar." if "*" not in config.ALLOWED_ORIGINS else "ALLOWED_ORIGINS=* -- production'da o'z domeningizni yozing.",
+            "detail": (
+                ("Faqat ruxsat etilgan domenlar." if config.ALLOWED_ORIGINS else "Yopiq: faqat saytning o'z domeni.")
+                if "*" not in config.ALLOWED_ORIGINS
+                else "ALLOWED_ORIGINS=* -- bo'sh qoldiring yoki o'z domeningizni yozing."
+            ),
         },
         {
             "ok": not (config.DATA_DIR / ".admin_password").exists(),

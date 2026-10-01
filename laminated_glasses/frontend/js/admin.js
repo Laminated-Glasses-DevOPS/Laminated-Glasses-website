@@ -1418,7 +1418,7 @@ document.getElementById('sideNav')?.addEventListener('click', (e) => {
 /* ---------- Zaxira nusxalar (backups) ---------- */
 
 function backupEmptyState() {
-  return `<p class="state-msg">Hozircha hech qanday zaxira fayli yo'q. Fayllar tozalash tsikli oldidan (buyurtmalar/yangiliklar — 48 soatda, xavfsizlik jurnali — 24 soatda) avtomatik paydo bo'ladi.</p>`;
+  return `<p class="state-msg">Eski Excel zaxira fayllari yo'q. Yangi zaxira yaratilmaydi: buyurtmalar, yangiliklar va xavfsizlik jurnali avtomatik o'chirilmaydi. Ma'lumotlarni saqlash uchun "Baza holati" bo'limidan .db faylni yuklab oling.</p>`;
 }
 
 function renderBackupsList(items) {
@@ -1523,7 +1523,7 @@ function renderStorageBars(status) {
   const rows = [
     { label: "Baza fayli (.db)", value: status.db_size_kb },
     { label: "Yuklangan rasmlar (uploads)", value: status.uploads_size_kb },
-    { label: "Excel zaxiralar (backups)", value: status.backups_size_kb },
+    { label: "Eski Excel zaxiralar", value: status.backups_size_kb },
   ];
   const diskPercent = status.disk_used_percent || 0;
   const warnClass = diskPercent >= 85 ? " warn" : "";

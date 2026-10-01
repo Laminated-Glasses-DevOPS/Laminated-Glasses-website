@@ -111,9 +111,9 @@
         Xavfsizlik
         <span class="order-badge" id="securityBadge" style="display:none;margin-left:auto;background:#e0483a;color:#fff;border-radius:999px;padding:1px 8px;font-size:0.72rem;font-weight:700;"></span>
       </button>
-      <button data-view="backups" data-title="Zaxira nusxalar">
+      <button data-view="backups" data-title="Eski Excel zaxiralar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 19h14"/></svg>
-        Zaxira nusxalar
+        Eski Excel zaxiralar
       </button>
       <button data-view="database" data-title="Baza holati">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
@@ -397,13 +397,14 @@
     <section class="view" id="view-backups">
       <div class="dash-topbar">
         <div>
-          <h2>Zaxira nusxalar</h2>
+          <h2>Eski Excel zaxiralar</h2>
           <p class="sub">
-            Buyurtmalar va yangiliklar har 48 soatda, xavfsizlik jurnali esa har 24 soatda
-            avtomatik tozalanadi. Tozalashdan OLDIN har bir bo'lim uchun alohida Excel (.xlsx)
-            fayl shu yerda tayyor turadi. Faylni yuklab olganingizdan so'ng, u serverdan
-            avtomatik o'chib ketadi -- shuning uchun kerakli backuplarni albatta o'z
-            kompyuteringizga saqlab qo'ying.
+            Buyurtmalar, yangiliklar va xavfsizlik jurnali endi avtomatik o'chirilmaydi va
+            Excel'ga zaxiralanmaydi -- ular faqat shu admin paneldan qo'lda o'chiriladi.
+            Bu yerda faqat avvalgi versiyalardan diskda qolib ketgan ESKI Excel (.xlsx)
+            fayllar ko'rinadi (bo'lsa). Yuklab olingach, ular serverdan o'chadi.
+            Butun ma'lumotlarni saqlab qo'yish uchun "Baza holati" bo'limidan .db faylni
+            yuklab oling.
           </p>
         </div>
         <button class="btn btn-ghost btn-sm" id="refreshBackupsBtn">Yangilash</button>

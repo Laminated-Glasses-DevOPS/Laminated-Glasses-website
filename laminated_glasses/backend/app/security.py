@@ -1,6 +1,7 @@
 """Parol xeshlash, JWT tokenlar va admin loginini brute-force dan himoya."""
 
 import hashlib
+import ipaddress
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -154,38 +155,86 @@ def get_optional_customer(
     return customer
 
 
+_PRIVATE_NETWORKS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10"
+
+
+def _parse_networks(raw: str):
+    nets = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if part.lower() == "private":
+            nets.extend(_parse_networks(_PRIVATE_NETWORKS))
+            continue
+        try:
+            nets.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+_TRUSTED_NETWORKS = _parse_networks(config.TRUSTED_PROXIES)
+
+
+def _to_ip(value: str):
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def _is_trusted_proxy(value: str) -> bool:
+    ip = _to_ip(value)
+    return bool(ip and any(ip in net for net in _TRUSTED_NETWORKS))
+
+
 def _get_client_ip(request: Request) -> str:
     """Mijozning HAQIQIY IP manzilini aniqlaydi.
 
-    XAVFSIZLIK ESLATMASI: oddiy "X-Forwarded-For" headeriga sukut bo'yicha
-    ISHONIB BO'LMAYDI -- uni har qanday mijoz (brauzer yoki skript) o'zi
-    xohlagancha o'zgartirib yuborishi mumkin. Agar shunga ishonilsa, login
-    brute-force blokini va honeypot IP kuzatuvini har safar headerni
-    almashtirib, osongina chetlab o'tish mumkin bo'lardi.
+    Proksi (nginx / Cloudflare Tunnel / Render) orqasida TCP ulanish manzili
+    proksining o'zi bo'ladi -- agar shunga tayanilsa, barcha mijozlar bitta
+    IP dek ko'rinib, login bloki, honeypot va rate-limit ishlamay qolardi.
+    Shu sabab proksi qo'ygan headerlardan foydalaniladi, lekin FAQAT so'rov
+    ishonchli proksidan (config.TRUSTED_PROXIES) kelgan bo'lsa -- aks holda
+    mijoz headerlarni o'zi yozib, IP'sini soxtalashtirishi mumkin.
 
-    Ustuvorlik:
-      1) "CF-Connecting-IP" -- FAQAT Cloudflare Tunnel/Proxy orqali kelganda
-         mavjud bo'ladi va Cloudflare tomonidan edge'da qo'yiladi, mijoz uni
-         o'zgartira olmaydi (Cloudflare har doim o'zining haqiqiy qiymatini
-         yozib qo'yadi) -- shuning uchun ishonchli.
-      2) To'g'ridan-to'g'ri TCP ulanish manzili (`request.client.host`) --
-         buni ham mijoz soxtalashtira olmaydi.
-      3) "X-Forwarded-For" FAQAT admin buni config.TRUST_X_FORWARDED_FOR=true
-         qilib, o'zi ishonadigan proksi (masalan o'z nginx serveri) orqasida
-         ishlatayotganini aniq bildirgandagina ishlatiladi.
+    Tartib:
+      1) TCP ulanish manzili (`request.client.host`). Uvicorn
+         `--proxy-headers` bilan ishga tushirilgan bo'lsa, bu manzil allaqachon
+         haqiqiy mijoz IP'siga almashtirilgan bo'ladi.
+      2) Ishonchli proksidan kelgan bo'lsa: `CF-Connecting-IP` (Cloudflare),
+         so'ng `X-Real-IP`, so'ng `X-Forwarded-For` (o'ngdan chapga, ishonchli
+         proksilarni o'tkazib yuborib, birinchi begona manzil).
     """
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip and cf_ip.strip():
-        return cf_ip.strip()
+    peer = request.client.host if request.client else ""
+    mode = config.TRUST_X_FORWARDED_FOR  # "auto" | "true" | "false"
 
-    if config.TRUST_X_FORWARDED_FOR:
+    trusted_peer = (mode == "true") or (mode == "auto" and peer and _is_trusted_proxy(peer))
+    # "false" rejimida proksi headerlariga umuman ishonilmaydi.
+    if mode == "false":
+        trusted_peer = False
+
+    if trusted_peer:
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip and _to_ip(cf_ip):
+            return cf_ip.strip()
+
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip and _to_ip(real_ip):
+            return real_ip.strip()
+
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+            for hop in reversed(hops):
+                if _to_ip(hop) and not _is_trusted_proxy(hop):
+                    return hop
+            for hop in hops:
+                if _to_ip(hop):
+                    return hop
 
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return peer or "unknown"
 
 
 # ---------------------------------------------------------------------------

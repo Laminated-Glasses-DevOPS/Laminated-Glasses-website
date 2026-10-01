@@ -1,0 +1,3 @@
+# Ixtiyoriy: xatolarni kuzatish. O'rnatish:  pip install -r requirements-optional.txt
+# So'ng .env ga SENTRY_DSN=... yozing.
+sentry-sdk>=2.0,<3

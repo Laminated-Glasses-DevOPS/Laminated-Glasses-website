@@ -6,9 +6,11 @@ yoki:
     uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Server ham API ni, ham frontendni bitta portdan beradi -- shu sababli
-cloudflared tunnel bilan global chiqarish uchun bitta manzil kifoya.
+nginx (VPS), cloudflared tunnel yoki Render orqali chiqarish uchun bitta
+manzil kifoya. VPS o'rnatish: deploy/README_VPS.md
 """
 
+import logging
 import os
 from datetime import datetime
 from urllib.parse import unquote_plus
@@ -23,6 +25,24 @@ from sqlalchemy import text
 from . import cleanup, config, honeypot_state, migrations, models, security, shield, utils
 from .database import Base, SessionLocal, engine
 from .routers import admin, public
+
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+# Ixtiyoriy xato kuzatuvi (Sentry). SENTRY_DSN bo'sh bo'lsa umuman ishlamaydi;
+# kutubxona o'rnatilmagan bo'lsa ham server yiqilmaydi.
+if config.SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(dsn=config.SENTRY_DSN, traces_sample_rate=0.0, send_default_pii=False)
+        logging.getLogger("app").info("Sentry yoqildi.")
+    except ImportError:
+        logging.getLogger("app").warning(
+            "SENTRY_DSN berilgan, lekin sentry-sdk o'rnatilmagan: pip install sentry-sdk"
+        )
 
 Base.metadata.create_all(bind=engine)
 # Mavjud SQLite bazalar uchun yangi ustun/indekslarni qo'shadi (mahsulot
@@ -282,9 +302,25 @@ def warn_if_cors_open() -> None:
     if "*" in config.ALLOWED_ORIGINS:
         print("-" * 64)
         print("  ESLATMA: ALLOWED_ORIGINS=* (hamma saytga ochiq). Frontend shu")
-        print("  serverdan beriladi, shuning uchun production'da buni o'z")
-        print("  domeningizga o'zgartiring: ALLOWED_ORIGINS=https://domen.uz")
+        print("  serverdan beriladi, shuning uchun buni bo'sh qoldiring yoki")
+        print("  o'z domeningizni yozing: ALLOWED_ORIGINS=https://domen.uz")
         print("-" * 64)
+
+
+@app.on_event("startup")
+def warn_if_multiple_workers() -> None:
+    """Rate-limit va login-lockout xotirada saqlanadi -- bir nechta worker
+    ishga tushsa, har biri alohida hisob yuritadi va cheklovlar chetlab
+    o'tilishi mumkin. Shu sabab faqat BITTA worker ishlatiladi."""
+    try:
+        workers = int(os.getenv("WEB_CONCURRENCY", "1") or "1")
+    except ValueError:
+        workers = 1
+    if workers > 1:
+        print("!" * 64)
+        print(f"  OGOHLANTIRISH: WEB_CONCURRENCY={workers}. Bu loyiha BITTA worker uchun")
+        print("  mo'ljallangan (rate-limit/lockout xotirada). --workers 1 ishlating.")
+        print("!" * 64)
 
 
 @app.on_event("startup")
@@ -299,11 +335,11 @@ def warn_if_google_not_configured() -> None:
 
 @app.on_event("startup")
 async def start_periodic_cleanup() -> None:
-    """Davriy fon tozalash vazifalarini ishga tushiradi: havfsizlik jurnali
-    va konstruktor preview rasmlari har 24 soatda, yangiliklar va
-    buyurtmalar har 48 soatda to'liq tozalanadi (batafsili: app/cleanup.py).
-    Mahsulotlar, ularning joriy rasmlari, mijozlar va konstruktor
-    o'lchamlari bunga tegilmaydi."""
+    """Fon tozalash: FAQAT konstruktorda foydalanuvchilar yuklagan rasmlar
+    (va muddati o'tgan limit yozuvlari) 24 soatdan keyin o'chiriladi.
+    Buyurtmalar, yangiliklar, xavfsizlik jurnali, mahsulotlar va mijozlar
+    avtomatik O'CHIRILMAYDI -- faqat admin panel orqali qo'lda
+    o'chiriladi (batafsili: app/cleanup.py)."""
     app.state.cleanup_tasks = cleanup.start_background_cleanup_tasks()
 
 

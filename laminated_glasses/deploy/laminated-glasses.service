@@ -1,0 +1,38 @@
+# systemd xizmat fayli -- VPS'da backendni doimiy (server qayta yuklansa ham
+# avtomatik) ishga tushiradi.
+#
+# O'rnatish:
+#   sudo cp deploy/laminated-glasses.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now laminated-glasses
+#
+# (deploy/install.sh buni avtomatik bajaradi.)
+#
+# MUHIM: faqat 1 ta worker (--workers 1) -- login-lockout/rate-limit
+# xotirada saqlanadi, bir nechta worker ularni chetlab o'tishga imkon beradi.
+
+[Unit]
+Description=Laminated Glasses backend (FastAPI/Uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=laminated_glasses
+Group=laminated_glasses
+WorkingDirectory=/opt/laminated_glasses/backend
+EnvironmentFile=/opt/laminated_glasses/backend/.env
+Environment=DATA_DIR=/var/lib/laminated_glasses
+ExecStart=/opt/laminated_glasses/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3
+
+# Xavfsizlik cheklovlari (zararni cheklash uchun, funksionallikka ta'sir qilmaydi)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/laminated_glasses
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
