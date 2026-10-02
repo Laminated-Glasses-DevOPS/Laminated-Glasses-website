@@ -5,8 +5,10 @@ faqat bitta joyda -- buyurtmani rasmiylashtirish (checkout) javobida beriladi.
 """
 
 from datetime import datetime, timedelta
+import html
 import json
 import threading
+from urllib.parse import unquote_plus
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -14,7 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import config, google_auth, honeypot_state, models, schemas, security, utils
+from .. import config, google_auth, honeypot_state, models, schemas, security, shield, utils
 from ..database import get_db
 
 router = APIRouter(tags=["Public"])
@@ -209,15 +211,55 @@ def _like_count(db: Session, product_id: int) -> int:
     )
 
 
-def _comment_out(c: models.ProductComment, name: str, me: Optional[models.Customer]) -> schemas.CommentOut:
+def _comment_out(c: models.ProductComment, author: models.Customer, me: Optional[models.Customer]) -> schemas.CommentOut:
+    """Ommaviy izoh: ism, (Google) profil rasmi, admin belgisi va matn.
+    Email va mijoz ID'si CHIQMAYDI."""
+    is_mine = me is not None and c.customer_id == me.id
+    used = int(c.edit_count or 0)
     return schemas.CommentOut(
         id=c.id,
-        name=name,
+        name=author.name,
         body=c.body,
         created_at=c.created_at,
         edited=c.edited_at is not None,
-        is_mine=me is not None and c.customer_id == me.id,
+        is_mine=is_mine,
+        avatar=utils.safe_avatar_url(author.picture_url),
+        is_admin=bool(author.is_staff),
+        edits_left=max(0, config.COMMENT_MAX_EDITS - used) if is_mine else 0,
     )
+
+
+def _reject_unsafe_comment(request: Request, db: Session, raw: str) -> None:
+    """Izoh matnida XSS/SQL Injection izlari bo'lsa urinishni jurnalga yozadi
+    va foydalanuvchiga FAQAT "Ruxsat berilmagan xabar." deb javob beradi
+    (honeypot sahifasi/kinoyali matn emas).
+
+    Middleware xom JSON'ni tekshiradi; bu yerda esa JSON decode qilingan,
+    HTML/URL-kodlangan variantlari ham tekshiriladi (masalan \\u003cscript)."""
+    variants = {raw, html.unescape(raw), unquote_plus(raw)}
+    xss_type = None
+    sqli = False
+    for text_value in variants:
+        xss_type = xss_type or shield.detect_xss(text_value)
+        sqli = sqli or shield.detect_sql_injection(text_value)
+    if not xss_type and not sqli:
+        return
+    try:
+        db.add(
+            models.SecurityEvent(
+                kind="xss" if xss_type else "sql_injection",
+                xss_type=xss_type,
+                ip_address=security._get_client_ip(request),
+                path=str(request.url.path)[:500],
+                method=request.method,
+                matched_sample=str(raw).strip()[:300],
+                user_agent=(request.headers.get("user-agent") or "")[:300],
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+    raise HTTPException(status_code=400, detail=config.COMMENT_BLOCKED_MESSAGE)
 
 
 @router.get("/products/{product_id}/social", response_model=schemas.ProductSocialOut)
@@ -230,7 +272,7 @@ def product_social(
     barcha (eng yangi COMMENT_LIST_LIMIT ta) izohlar."""
     _active_product_or_404(db, product_id)
     rows = (
-        db.query(models.ProductComment, models.Customer.name)
+        db.query(models.ProductComment, models.Customer)
         .join(models.Customer, models.Customer.id == models.ProductComment.customer_id)
         .filter(models.ProductComment.product_id == product_id)
         .order_by(models.ProductComment.created_at.desc(), models.ProductComment.id.desc())
@@ -269,10 +311,11 @@ def product_social(
         like_count=_like_count(db, product_id),
         liked=liked,
         comment_count=int(total),
-        comments=[_comment_out(c, name, customer) for c, name in rows],
+        comments=[_comment_out(c, author, customer) for c, author in rows],
         my_comment_count=int(mine),
         comment_limit=config.COMMENT_MAX_PER_USER_PER_PRODUCT,
         comment_max_length=config.COMMENT_MAX_LENGTH,
+        comment_max_edits=config.COMMENT_MAX_EDITS,
     )
 
 
@@ -332,6 +375,7 @@ def add_comment(
     (5) tagacha izoh yoza oladi; matn COMMENT_MAX_LENGTH (100) belgigacha."""
     security.enforce_rate_limit(request, "product_comment", max_calls=20, window_seconds=600)
     _active_product_or_404(db, product_id)
+    _reject_unsafe_comment(request, db, payload.body)
     try:
         body = utils.clean_comment_text(payload.body)
     except ValueError as exc:
@@ -362,7 +406,7 @@ def add_comment(
         db.add(comment)
         db.commit()
         db.refresh(comment)
-    return _comment_out(comment, customer.name, customer)
+    return _comment_out(comment, customer, customer)
 
 
 def _own_comment_or_404(db: Session, comment_id: int, customer: models.Customer) -> models.ProductComment:
@@ -388,17 +432,35 @@ def edit_comment(
     db: Session = Depends(get_db),
     customer: models.Customer = Depends(security.get_current_customer),
 ):
-    """Faqat o'z izohini tahrirlaydi."""
+    """Faqat o'z izohini tahrirlaydi. Har bir izohni eng ko'pi bilan
+    COMMENT_MAX_EDITS (3) marta tahrirlash mumkin; matn o'zgarmasa urinish
+    hisobga olinmaydi."""
     security.enforce_rate_limit(request, "product_comment", max_calls=20, window_seconds=600)
-    comment = _own_comment_or_404(db, comment_id, customer)
+    _reject_unsafe_comment(request, db, payload.body)
     try:
-        comment.body = utils.clean_comment_text(payload.body)
+        new_body = utils.clean_comment_text(payload.body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    comment.edited_at = datetime.utcnow()
-    db.commit()
-    db.refresh(comment)
-    return _comment_out(comment, customer.name, customer)
+
+    # Tekshiruv + yozish bir butun: ikki parallel so'rov limitdan oshib ketmasin.
+    with _comment_lock:
+        comment = _own_comment_or_404(db, comment_id, customer)
+        if new_body != comment.body:
+            used = int(comment.edit_count or 0)
+            if used >= config.COMMENT_MAX_EDITS:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Bu izohni {config.COMMENT_MAX_EDITS} martadan ortiq tahrirlab bo'lmaydi. "
+                        "Xohlasangiz o'chirib, yangisini yozing."
+                    ),
+                )
+            comment.body = new_body
+            comment.edit_count = used + 1
+            comment.edited_at = datetime.utcnow()
+            db.commit()
+            db.refresh(comment)
+    return _comment_out(comment, customer, customer)
 
 
 @router.delete("/comments/{comment_id}", status_code=204)

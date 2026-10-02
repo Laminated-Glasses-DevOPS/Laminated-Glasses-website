@@ -12,6 +12,7 @@ manzil kifoya. VPS o'rnatish: deploy/README_VPS.md
 
 import logging
 import os
+import re
 from datetime import datetime
 from urllib.parse import unquote_plus
 
@@ -112,6 +113,16 @@ def _log_security_event(kind: str, xss_type, request: Request, sample: str) -> N
         db.rollback()
     finally:
         db.close()
+
+
+_COMMENT_WRITE_RE = re.compile(r"^/api/(products/\d+/comments|comments/\d+)/?$")
+
+
+def _is_comment_write(request: Request) -> bool:
+    """Izoh yozish/tahrirlash so'rovimi? Bunda hujum urinishi honeypot
+    sahifasi bilan emas, oddiy "Ruxsat berilmagan xabar." matni bilan
+    to'xtatiladi (oddiy mijozga \"boshqa sayt qidiring\" deb aytish noo'rin)."""
+    return request.method in ("POST", "PUT") and bool(_COMMENT_WRITE_RE.match(request.url.path))
 
 
 def _wants_html_page(request: Request) -> bool:
@@ -221,11 +232,15 @@ async def honeypot_shield(request: Request, call_next):
     xss_type = shield.detect_xss(combined)
     if xss_type:
         _log_security_event("xss", xss_type, request, combined)
+        if _is_comment_write(request):
+            return JSONResponse(status_code=400, content={"detail": config.COMMENT_BLOCKED_MESSAGE})
         message = f"XSS ({xss_type}) qo'llash uchun bizni saytdan boshqa sayt topilmadimi?"
         return _honeypot_response("xss", message, request)
 
     if shield.detect_sql_injection(combined):
         _log_security_event("sql_injection", None, request, combined)
+        if _is_comment_write(request):
+            return JSONResponse(status_code=400, content={"detail": config.COMMENT_BLOCKED_MESSAGE})
         message = "SQL Injection qo'llash uchun bizni saytdan boshqa sayt topilmadimi?"
         return _honeypot_response("sql_injection", message, request)
 

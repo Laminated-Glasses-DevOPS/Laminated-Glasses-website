@@ -400,9 +400,11 @@ def list_comments_admin(
                 customer_id=cust.id,
                 customer_name=cust.name,
                 customer_email=cust.email,
+                customer_is_staff=bool(cust.is_staff),
                 body=c.body,
                 created_at=c.created_at,
                 edited_at=c.edited_at,
+                edit_count=int(c.edit_count or 0),
             )
             for c, cust, product_name in rows
         ],
@@ -426,6 +428,83 @@ def delete_comment_admin(
     db.delete(comment)
     db.commit()
     return None
+
+
+# ---------- Adminlarni tayinlash ----------
+#
+# "Admin" -- saytdagi Google akkauntli mijozga beriladigan BELGI: uning
+# izohlarida tasdiqlash belgisi (✔ Admin) ko'rinadi. Bu belgi admin panelga
+# kirish huquqini BERMAYDI (panelga faqat parol + JWT bilan kiriladi).
+
+
+def _admin_user_out(c: models.Customer) -> schemas.AdminUserOut:
+    return schemas.AdminUserOut(
+        id=c.id,
+        name=c.name,
+        email=c.email,
+        picture_url=utils.safe_avatar_url(c.picture_url),
+        is_staff=bool(c.is_staff),
+        last_login_at=c.last_login_at,
+    )
+
+
+@router.get("/users", response_model=schemas.AdminUserListOut)
+def list_users_admin(
+    search: Optional[str] = None,
+    only_staff: bool = False,
+    limit: int = 30,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Google orqali kirgan foydalanuvchilar (adminlar birinchi, keyin oxirgi
+    kirganlar). `search` -- ism yoki email bo'yicha."""
+    limit = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
+    query = db.query(models.Customer).filter(models.Customer.google_sub.isnot(None))
+    if only_staff:
+        query = query.filter(models.Customer.is_staff == 1)
+    term = (search or "").strip()[:100]
+    if term:
+        like = f"%{_escape_like(term)}%"
+        query = query.filter(
+            models.Customer.name.ilike(like, escape="\\")
+            | models.Customer.email.ilike(like, escape="\\")
+        )
+    total = query.count()
+    rows = (
+        query.order_by(
+            models.Customer.is_staff.desc(),
+            models.Customer.last_login_at.desc(),
+            models.Customer.id.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    return schemas.AdminUserListOut(total=total, items=[_admin_user_out(c) for c in rows])
+
+
+@router.put("/users/{customer_id}/staff", response_model=schemas.AdminUserOut)
+def set_user_staff(
+    customer_id: int,
+    payload: schemas.StaffToggleIn,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Foydalanuvchini admin qiladi yoki adminlikdan oladi."""
+    customer = (
+        db.query(models.Customer)
+        .filter(models.Customer.id == customer_id, models.Customer.google_sub.isnot(None))
+        .first()
+    )
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi.")
+    customer.is_staff = 1 if payload.is_staff else 0
+    db.commit()
+    db.refresh(customer)
+    return _admin_user_out(customer)
+
 
 
 @router.put("/settings/password")

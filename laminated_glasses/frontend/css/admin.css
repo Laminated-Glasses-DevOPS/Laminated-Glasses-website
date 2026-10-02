@@ -1636,3 +1636,23 @@ body.no-scroll {
 .comment-row-body { margin: 6px 0 0; font-size: 0.92rem; line-height: 1.5; color: var(--navy); overflow-wrap: anywhere; white-space: pre-wrap; }
 .comments-more { text-align: center; margin-top: 12px; }
 @media (max-width: 600px) { .comment-row { flex-direction: column; } }
+
+/* Adminlarni tayinlash */
+.staff-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0; border-top: 1px solid var(--line);
+}
+.staff-row:first-child { border-top: 0; }
+.staff-main { flex: 1; min-width: 0; }
+.staff-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.staff-name strong { color: var(--navy); font-size: 0.92rem; overflow-wrap: anywhere; }
+.staff-sub { margin-top: 2px; font-size: 0.78rem; color: var(--navy-soft); overflow-wrap: anywhere; }
+.staff-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  background: #e8f4fe; color: #1479c4; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.02em;
+}
+@media (max-width: 600px) { .staff-row { flex-wrap: wrap; } .staff-row .btn { margin-left: 52px; } }
+
+/* hidden atributi .btn ning display qiymati tufayli e'tiborsiz qolmasin */
+.btn[hidden] { display: none; }
+#staffOnlyBtn[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }

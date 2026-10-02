@@ -22,6 +22,8 @@ _COLUMN_MIGRATIONS = [
     ("customers", "given_name", "VARCHAR(120)"),
     ("customers", "family_name", "VARCHAR(120)"),
     ("customers", "locale", "VARCHAR(20)"),
+    ("customers", "is_staff", "INTEGER NOT NULL DEFAULT 0"),
+    ("product_comments", "edit_count", "INTEGER NOT NULL DEFAULT 0"),
     ("customers", "name_confirmed", "INTEGER NOT NULL DEFAULT 0"),
     ("customers", "login_count", "INTEGER NOT NULL DEFAULT 0"),
     ("customers", "last_login_at", "DATETIME"),
@@ -37,6 +39,7 @@ _INDEX_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS ix_visit_logs_customer_id ON visit_logs (customer_id)",
     # Tez-tez ishlatiladigan so'rovlar uchun kompozit indekslar (admin ro'yxatlar,
     # statistika, savat, tozalash vazifalari).
+    "CREATE INDEX IF NOT EXISTS ix_comments_product_created ON product_comments (product_id, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_orders_status_created ON orders (status, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_orders_customer_created ON orders (customer_id, created_at)",
     "CREATE INDEX IF NOT EXISTS ix_cart_customer_expires ON cart_items (customer_id, expires_at)",
@@ -46,6 +49,8 @@ _INDEX_MIGRATIONS = [
 ]
 
 _BACKFILLS = [
+    # Avval tahrirlangan izohlar kamida 1 marta tahrirlangan hisoblanadi.
+    "UPDATE product_comments SET edit_count = 1 WHERE edited_at IS NOT NULL AND edit_count = 0",
     # Google'ga allaqachon bog'langan mijozlar uchun "ro'yxatdan o'tgan payt".
     "UPDATE customers SET google_registered_at = COALESCE(last_login_at, created_at) "
     "WHERE google_sub IS NOT NULL AND google_registered_at IS NULL",

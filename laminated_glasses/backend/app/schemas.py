@@ -559,6 +559,11 @@ class CommentOut(BaseModel):
     created_at: datetime
     edited: bool = False
     is_mine: bool = False
+    # Profil rasmi (faqat Google rasm serveri manzili) va admin belgisi.
+    avatar: Optional[str] = None
+    is_admin: bool = False
+    # Faqat izoh egasi uchun: yana necha marta tahrirlash mumkin.
+    edits_left: int = 0
 
     @field_serializer("created_at")
     def _serialize_utc(self, value: datetime) -> str:
@@ -573,6 +578,7 @@ class ProductSocialOut(BaseModel):
     my_comment_count: int = 0
     comment_limit: int
     comment_max_length: int
+    comment_max_edits: int = 3
 
 
 class LikeOut(BaseModel):
@@ -590,9 +596,11 @@ class AdminCommentOut(BaseModel):
     customer_id: int
     customer_name: str
     customer_email: Optional[str] = None
+    customer_is_staff: bool = False
     body: str
     created_at: datetime
     edited_at: Optional[datetime] = None
+    edit_count: int = 0
 
     @field_serializer("created_at", "edited_at")
     def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
@@ -602,3 +610,27 @@ class AdminCommentOut(BaseModel):
 class AdminCommentListOut(BaseModel):
     total: int
     items: List[AdminCommentOut]
+
+
+class AdminUserOut(BaseModel):
+    """Admin panel: admin tayinlash uchun foydalanuvchi qatori."""
+
+    id: int
+    name: str
+    email: Optional[str] = None
+    picture_url: Optional[str] = None
+    is_staff: bool = False
+    last_login_at: Optional[datetime] = None
+
+    @field_serializer("last_login_at")
+    def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
+        return (value.isoformat() + "Z") if value else None
+
+
+class AdminUserListOut(BaseModel):
+    total: int
+    items: List[AdminUserOut]
+
+
+class StaffToggleIn(BaseModel):
+    is_staff: bool

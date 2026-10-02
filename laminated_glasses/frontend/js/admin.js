@@ -1808,9 +1808,9 @@ function renderAdminComments() {
       <div class="comment-row" data-id="${c.id}">
         <div class="comment-row-main">
           <div class="comment-row-meta">
-            <strong>${escapeHtml(c.customer_name)}</strong>
+            <strong>${escapeHtml(c.customer_name)}</strong>${c.customer_is_staff ? '<span class="staff-tag">✔ Admin</span>' : ""}
             <span>${escapeHtml(c.customer_email || "email yo'q")}</span>
-            <span>· ${escapeHtml(formatDate(c.created_at))}${c.edited_at ? " (tahrirlangan)" : ""}</span>
+            <span>· ${escapeHtml(formatDate(c.created_at))}${c.edited_at ? ` (tahrirlangan: ${c.edit_count || 1} marta)` : ""}</span>
           </div>
           <div class="comment-row-product">Mahsulot: <b>${escapeHtml(c.product_name)}</b></div>
           <p class="comment-row-body">${escapeHtml(c.body)}</p>
@@ -1876,4 +1876,118 @@ document.getElementById("adminCommentsList")?.addEventListener("click", async (e
 
 document.getElementById("sideNav")?.addEventListener("click", (e) => {
   if (e.target.closest('[data-view="comments"]')) loadAdminComments();
+});
+
+/* ---------- Adminlarni tayinlash ---------- */
+
+const staffState = { items: [], total: 0, search: "", onlyStaff: false, loading: false };
+const STAFF_PAGE = 30;
+
+function renderStaff() {
+  const list = document.getElementById("staffList");
+  const totalEl = document.getElementById("staffTotal");
+  const moreBtn = document.getElementById("staffMoreBtn");
+  if (!list) return;
+  totalEl.textContent = staffState.total ? `Jami: ${staffState.total}` : "";
+  moreBtn.hidden = staffState.items.length >= staffState.total;
+
+  if (!staffState.items.length) {
+    list.innerHTML = `<p class="empty-row" style="padding:26px 6px;text-align:center;">${
+      staffState.search || staffState.onlyStaff ? "Hech narsa topilmadi." : "Hozircha Google orqali kirgan foydalanuvchi yo'q."
+    }</p>`;
+    return;
+  }
+  list.innerHTML = staffState.items
+    .map((u) => {
+      const avatar = u.picture_url
+        ? `<img src="${escapeHtml(u.picture_url)}" alt="" referrerpolicy="no-referrer" loading="lazy" />`
+        : escapeHtml((u.name || "?").trim().charAt(0).toUpperCase());
+      return `
+      <div class="staff-row" data-id="${u.id}">
+        <span class="recent-user-avatar">${avatar}</span>
+        <div class="staff-main">
+          <div class="staff-name"><strong>${escapeHtml(u.name)}</strong>${u.is_staff ? '<span class="staff-tag">✔ Admin</span>' : ""}</div>
+          <div class="staff-sub">${escapeHtml(u.email || "email yo'q")}${u.last_login_at ? ` · oxirgi kirish: ${escapeHtml(formatDate(u.last_login_at))}` : ""}</div>
+        </div>
+        ${
+          u.is_staff
+            ? `<button class="btn btn-ghost btn-sm" data-staff="${u.id}" data-make="0">Adminlikdan olish</button>`
+            : `<button class="btn btn-primary btn-sm" data-staff="${u.id}" data-make="1">Admin qilish</button>`
+        }
+      </div>`;
+    })
+    .join("");
+}
+
+async function loadStaff({ append = false } = {}) {
+  if (staffState.loading) return;
+  staffState.loading = true;
+  try {
+    const offset = append ? staffState.items.length : 0;
+    const params = new URLSearchParams({ limit: STAFF_PAGE, offset });
+    if (staffState.search) params.set("search", staffState.search);
+    if (staffState.onlyStaff) params.set("only_staff", "true");
+    const data = await apiRequest(`/admin/users?${params.toString()}`);
+    staffState.total = data.total;
+    staffState.items = append ? staffState.items.concat(data.items) : data.items;
+    renderStaff();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    staffState.loading = false;
+  }
+}
+
+let staffSearchTimer = null;
+document.getElementById("staffSearch")?.addEventListener("input", (e) => {
+  clearTimeout(staffSearchTimer);
+  staffSearchTimer = setTimeout(() => {
+    staffState.search = e.target.value.trim();
+    loadStaff();
+  }, 300);
+});
+
+document.getElementById("staffOnlyBtn")?.addEventListener("click", (e) => {
+  staffState.onlyStaff = !staffState.onlyStaff;
+  e.currentTarget.setAttribute("aria-pressed", staffState.onlyStaff ? "true" : "false");
+  loadStaff();
+});
+
+document.getElementById("refreshStaffBtn")?.addEventListener("click", () => loadStaff());
+document.getElementById("staffMoreBtn")?.addEventListener("click", () => loadStaff({ append: true }));
+
+document.getElementById("staffList")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-staff]");
+  if (!btn) return;
+  const id = Number(btn.dataset.staff);
+  const make = btn.dataset.make === "1";
+  const user = staffState.items.find((u) => u.id === id);
+  const who = user ? `"${user.name}"` : "Foydalanuvchi";
+  const ok = await lgConfirm({
+    tone: make ? "info" : "danger",
+    title: make ? "Admin qilib tayinlash" : "Adminlikdan olish",
+    message: make
+      ? `${who} izohlarida "✔ Admin" belgisi paydo bo'ladi. Admin panelga kirish huquqi berilmaydi.`
+      : `${who} izohlaridan "✔ Admin" belgisi olib tashlanadi.`,
+    confirmText: make ? "Ha, admin qilish" : "Ha, olib tashlash",
+  });
+  if (!ok) return;
+  btn.disabled = true;
+  try {
+    const updated = await apiRequest(`/admin/users/${id}/staff`, {
+      method: "PUT",
+      body: JSON.stringify({ is_staff: make }),
+    });
+    showToast(make ? "Admin qilib tayinlandi." : "Adminlikdan olindi.");
+    const idx = staffState.items.findIndex((u) => u.id === id);
+    if (idx >= 0) staffState.items[idx] = updated;
+    renderStaff();
+  } catch (err) {
+    showToast(err.message, true);
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("sideNav")?.addEventListener("click", (e) => {
+  if (e.target.closest('[data-view="staff"]')) loadStaff();
 });

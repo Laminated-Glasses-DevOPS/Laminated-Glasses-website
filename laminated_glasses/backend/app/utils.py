@@ -226,3 +226,29 @@ def clean_comment_text(raw: str) -> str:
     if len(text) > config.COMMENT_MAX_LENGTH:
         raise ValueError(f"Izoh {config.COMMENT_MAX_LENGTH} ta belgidan oshmasin.")
     return text
+
+
+_AVATAR_HOSTS = ("googleusercontent.com", "ggpht.com")
+
+
+def safe_avatar_url(url) -> "str | None":
+    """Profil rasmi manzilini ommaviy javobga chiqarishdan oldin tekshiradi:
+    faqat https va faqat Google rasm serverlari (googleusercontent.com,
+    ggpht.com). Boshqa har qanday manzil (masalan tasodifan bazaga tushgan
+    begona havola) o'tkazilmaydi -- shunda izohda hech qachon begona
+    domen yuklanmaydi."""
+    from urllib.parse import urlparse
+
+    raw = str(url or "").strip()
+    if not raw or len(raw) > 500:
+        return None
+    try:
+        parts = urlparse(raw)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host:
+        return None
+    if any(host == h or host.endswith("." + h) for h in _AVATAR_HOSTS):
+        return raw
+    return None

@@ -627,11 +627,11 @@ function renderProducts() {
           <span class="product-tag">${escapeHtml(p.category)}</span>
           <h3 class="product-name" data-open="${p.id}">${escapeHtml(p.name)}</h3>
           <p class="product-desc">${escapeHtml(p.description || "")}</p>
-          <button class="comment-link" type="button" data-open="${p.id}" data-comments-for="${p.id}">${commentLinkText(p.comment_count)}</button>
           <div class="product-foot">
             <div class="product-price">${formatPrice(p.sale_price)}<span>so'm</span></div>
             <button class="btn btn-primary btn-sm" data-add="${p.id}">Savatga</button>
           </div>
+          <button class="comment-btn" type="button" data-comments-open="${p.id}" data-comments-for="${p.id}" aria-label="Izohlar">${commentBtnHTML(p.comment_count)}</button>
         </div>
       </article>`
     )
@@ -683,6 +683,14 @@ function renderProducts() {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleLike(Number(btn.dataset.like));
+    });
+  });
+
+  grid.querySelectorAll("[data-comments-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const product = productById(Number(btn.dataset.commentsOpen));
+      if (product) openComments(product, btn);
     });
   });
 
@@ -832,8 +840,13 @@ function likeButtonHTML(p, where) {
   return `<button class="${cls}${p.liked ? " liked" : ""}" type="button" data-like="${p.id}" data-like-where="${where}" aria-pressed="${p.liked ? "true" : "false"}" aria-label="${p.liked ? "Like'ni qaytarib olish" : "Yoqdi"}">${HEART_SVG}<span class="like-num">${p.like_count || 0}</span></button>`;
 }
 
-function commentLinkText(n) {
-  return n > 0 ? `💬 Izohlar (${n})` : "💬 Izoh yozish";
+const CHAT_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
+
+/* Izoh tugmasi ichi: ikonka + matn + (izoh bo'lsa) soni. Faqat son qo'yiladi -- xavfsiz. */
+function commentBtnHTML(n) {
+  const count = Number(n) || 0;
+  return `${CHAT_SVG}<span class="cb-label">${count > 0 ? "Izohlar" : "Izoh yozish"}</span>${count > 0 ? `<span class="cb-count">${count}</span>` : ""}`;
 }
 
 function productById(id) {
@@ -852,7 +865,7 @@ function paintProductSocial(productId) {
     if (num) num.textContent = p.like_count || 0;
   });
   document.querySelectorAll(`[data-comments-for="${productId}"]`).forEach((node) => {
-    node.textContent = commentLinkText(p.comment_count);
+    node.innerHTML = commentBtnHTML(p.comment_count);
   });
 }
 
@@ -890,9 +903,78 @@ function formatDateTime(iso) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const social = { productId: null, data: null, editingId: null, busy: false };
+/* ---------- Izohlar oynasi ----------
+   Izohlar mahsulot oynasidan ALOHIDA, o'zining oynasida ochiladi (tovar
+   kattalashib ketmaydi). Telefonda pastdan chiqadigan oyna, kompyuterda
+   markazdagi oyna. Hamma matn DOMga faqat textContent orqali yoziladi --
+   HTML sifatida ishlamaydi. Limitlar (5 ta izoh, 100 belgi, 3 ta tahrir)
+   serverdan keladi. */
 
-/* Mahsulot oynasiga izohlar bo'limi bir marta qo'shiladi (barcha sahifalarda bir xil). */
+const SEND_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4z"/></svg>';
+
+/* Admin tasdiqlash belgisi (rosetka + galochka). Statik, foydalanuvchi matni yo'q. */
+const BADGE_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M12.00 1.10 L13.81 2.88 L16.17 1.93 L17.17 4.27 L19.71 4.29 L19.73 6.83 L22.07 7.83 L21.12 10.19 L22.90 12.00 L21.12 13.81 L22.07 16.17 L19.73 17.17 L19.71 19.71 L17.17 19.73 L16.17 22.07 L13.81 21.12 L12.00 22.90 L10.19 21.12 L7.83 22.07 L6.83 19.73 L4.29 19.71 L4.27 17.17 L1.93 16.17 L2.88 13.81 L1.10 12.00 L2.88 10.19 L1.93 7.83 L4.27 6.83 L4.29 4.29 L6.83 4.27 L7.83 1.93 L10.19 2.88Z"/><path fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m7.6 12.4 3 3 5.8-6.2"/></svg>';
+
+const CM_PAGE = 20; // bir vaqtda chiqariladigan izohlar (uzun ro'yxat qotmasligi uchun)
+const cm = { productId: null, productName: "", data: null, editingId: null, shown: CM_PAGE, draft: "", busy: false, opener: null };
+
+/* Kuchsiz qurilmalarda (kam xotira/yadro) yoki "animatsiyani kamaytirish" yoqilgan bo'lsa
+   oyna animatsiyasiz, yengil ishlaydi. */
+(function markLiteDevice() {
+  try {
+    const weak =
+      (navigator.deviceMemory && navigator.deviceMemory <= 2) ||
+      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) ||
+      (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (weak) document.documentElement.classList.add("lite");
+  } catch (_) { /* e'tiborsiz */ }
+})();
+
+function safeAvatar(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    if (u.protocol !== "https:") return "";
+    if (h === "googleusercontent.com" || h.endsWith(".googleusercontent.com") || h.endsWith(".ggpht.com")) return u.href;
+  } catch (_) { /* yaroqsiz manzil */ }
+  return "";
+}
+
+const AVATAR_COLORS = ["#2e86c8", "#12557f", "#d98a2b", "#3f9a68", "#7d5bc4", "#c4506a", "#3c6484"];
+
+/* Profil rasmi; rasm bo'lmasa yoki yuklanmasa -- ism bosh harfi (rangli doira). */
+function avatarEl(name, url) {
+  const wrap = document.createElement("span");
+  wrap.className = "cm-avatar";
+  const label = String(name || "?").trim();
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) | 0;
+  wrap.style.background = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  wrap.textContent = (Array.from(label)[0] || "?").toUpperCase();
+  const src = safeAvatar(url);
+  if (src) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.width = 40;
+    img.height = 40;
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => img.remove(), { once: true });
+    img.src = src;
+    wrap.appendChild(img);
+  }
+  return wrap;
+}
+
+function friendlyError(err) {
+  return err && err.status ? err.message : "Internet bilan aloqa yo'q. Birozdan so'ng qayta urinib ko'ring.";
+}
+
+/* Mahsulot oynasida (kattalashgan ko'rinish) faqat yurakcha va "Izohlar" tugmasi bo'ladi;
+   izohlarning o'zi alohida oynada ochiladi. */
 function ensureSocialUI() {
   if (el("socialBox")) return;
   const body = document.querySelector("#productModal .modal-body");
@@ -902,34 +984,111 @@ function ensureSocialUI() {
   box.className = "social-box";
   box.innerHTML = `
     <div class="social-head">
-      <h4 id="socialTitle">Izohlar</h4>
       <span id="socialLikeHolder"></span>
-    </div>
-    <p class="social-note">Izohda faqat ismingiz va matn ko'rinadi — profil rasmingiz va emailingiz ko'rinmaydi.</p>
-    <div id="socialForm"></div>
-    <div class="social-list" id="socialList" aria-live="polite"></div>`;
+      <button type="button" class="comment-btn" id="socialCommentBtn" data-comments-for=""></button>
+    </div>`;
   body.appendChild(box);
 }
 
 function openSocial(product) {
   ensureSocialUI();
   if (!el("socialBox")) return;
-  social.productId = product.id;
-  social.data = null;
-  social.editingId = null;
   el("socialLikeHolder").innerHTML = likeButtonHTML(product, "modal");
   el("socialLikeHolder").querySelector("[data-like]").addEventListener("click", () => toggleLike(product.id));
-  el("socialTitle").textContent = "Izohlar";
-  el("socialForm").innerHTML = "";
-  el("socialList").innerHTML = '<p class="social-empty">Yuklanmoqda…</p>';
-  loadSocial(product.id);
+  const btn = el("socialCommentBtn");
+  btn.dataset.commentsFor = String(product.id);
+  btn.innerHTML = commentBtnHTML(product.comment_count);
+  btn.onclick = () => openComments(product, btn);
 }
 
-async function loadSocial(productId) {
+/* ----- Oynaning o'zi ----- */
+
+let commentsFitRaf = 0;
+function fitCommentsToViewport() {
+  // Telefonda klaviatura ochilganda oyna va yozish maydoni klaviatura ostida qolmasligi uchun.
+  const ov = el("commentsModal");
+  const vv = window.visualViewport;
+  if (!ov || !vv || !ov.classList.contains("open")) return;
+  cancelAnimationFrame(commentsFitRaf);
+  commentsFitRaf = requestAnimationFrame(() => {
+    ov.style.top = `${vv.offsetTop}px`;
+    ov.style.height = `${vv.height}px`;
+    ov.style.bottom = "auto";
+    ov.classList.toggle("kb", vv.height < window.innerHeight * 0.75);
+  });
+}
+
+function ensureCommentsUI() {
+  if (el("commentsModal")) return;
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay comments-overlay";
+  ov.id = "commentsModal";
+  ov.setAttribute("role", "dialog");
+  ov.setAttribute("aria-modal", "true");
+  ov.setAttribute("aria-labelledby", "commentsTitle");
+  ov.innerHTML = `
+    <div class="comments-sheet" tabindex="-1">
+      <div class="cm-handle" aria-hidden="true"></div>
+      <header class="cm-head">
+        <div class="cm-titles">
+          <h3 id="commentsTitle">Izohlar</h3>
+          <p class="cm-sub" id="commentsSub"></p>
+        </div>
+        <button class="cm-close" id="commentsClose" type="button" aria-label="Yopish">✕</button>
+      </header>
+      <div class="cm-body" id="commentsList" aria-live="polite"></div>
+      <footer class="cm-foot" id="commentsForm"></footer>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if (e.target === ov) closeComments(); });
+  el("commentsClose").addEventListener("click", closeComments);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitCommentsToViewport);
+    window.visualViewport.addEventListener("scroll", fitCommentsToViewport);
+  }
+}
+
+function closeComments() {
+  const ov = el("commentsModal");
+  if (!ov) return;
+  closeModal("commentsModal");
+  ov.style.top = ov.style.height = ov.style.bottom = "";
+  ov.classList.remove("kb");
+  cm.editingId = null;
+  if (cm.opener && cm.opener.isConnected) { try { cm.opener.focus({ preventScroll: true }); } catch (_) { /* e'tiborsiz */ } }
+  cm.opener = null;
+}
+
+function openComments(product, opener) {
+  ensureCommentsUI();
+  if (cm.productId !== product.id) cm.draft = "";
+  cm.productId = product.id;
+  cm.productName = product.name || "";
+  cm.data = null;
+  cm.editingId = null;
+  cm.shown = CM_PAGE;
+  cm.opener = opener || null;
+  el("commentsTitle").textContent = "Izohlar";
+  el("commentsSub").textContent = cm.productName;
+  el("commentsForm").textContent = "";
+  const list = el("commentsList");
+  list.textContent = "";
+  const loading = document.createElement("p");
+  loading.className = "cm-empty-text";
+  loading.textContent = "Yuklanmoqda…";
+  list.appendChild(loading);
+  openModal("commentsModal");
+  fitCommentsToViewport();
+  const sheet = document.querySelector("#commentsModal .comments-sheet");
+  if (sheet) sheet.focus({ preventScroll: true });
+  loadComments(product.id, { top: true });
+}
+
+async function loadComments(productId, opts = {}) {
   try {
     const data = await api(`/products/${productId}/social`);
-    if (social.productId !== productId) return; // foydalanuvchi boshqa mahsulotni ochib bo'ldi
-    social.data = data;
+    if (cm.productId !== productId) return; // foydalanuvchi boshqa mahsulotni ochib bo'ldi
+    cm.data = data;
     const p = productById(productId);
     if (p) {
       p.like_count = data.like_count;
@@ -937,90 +1096,179 @@ async function loadSocial(productId) {
       p.comment_count = data.comment_count;
       paintProductSocial(productId);
     }
-    renderSocial();
+    renderComments();
+    if (opts.top) el("commentsList").scrollTop = 0;
   } catch (err) {
-    if (social.productId !== productId) return;
-    el("socialList").innerHTML = '<p class="social-empty">Izohlarni yuklab bo\'lmadi. Keyinroq urinib ko\'ring.</p>';
+    if (cm.productId !== productId) return;
+    const list = el("commentsList");
+    list.textContent = "";
+    const box = document.createElement("div");
+    box.className = "cm-empty";
+    const text = document.createElement("p");
+    text.className = "cm-empty-text";
+    text.textContent = "Izohlarni yuklab bo'lmadi.";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "btn btn-ghost btn-sm";
+    retry.textContent = "Qayta urinish";
+    retry.addEventListener("click", () => {
+      list.textContent = "";
+      const again = document.createElement("p");
+      again.className = "cm-empty-text";
+      again.textContent = "Yuklanmoqda…";
+      list.appendChild(again);
+      loadComments(productId, { top: true });
+    });
+    box.append(text, retry);
+    list.appendChild(box);
   }
 }
 
-function renderSocial() {
-  const data = social.data;
+function renderComments() {
+  const data = cm.data;
   if (!data) return;
-  const productId = social.productId;
-  el("socialTitle").textContent = `Izohlar (${data.comment_count})`;
-  renderSocialForm();
+  el("commentsTitle").textContent = data.comment_count > 0 ? `Izohlar (${data.comment_count})` : "Izohlar";
+  renderComposer();
 
-  const list = el("socialList");
+  const list = el("commentsList");
+  const keepTop = list.scrollTop;
   list.textContent = "";
+
   if (!data.comments.length) {
-    const empty = document.createElement("p");
-    empty.className = "social-empty";
-    empty.textContent = "Hozircha izoh yo'q. Birinchi bo'lib yozing!";
+    const empty = document.createElement("div");
+    empty.className = "cm-empty";
+    const icon = document.createElement("span");
+    icon.className = "cm-empty-icon";
+    icon.innerHTML = CHAT_SVG;
+    const text = document.createElement("p");
+    text.className = "cm-empty-text";
+    text.textContent = "Hozircha izoh yo'q. Birinchi bo'lib fikringizni yozing!";
+    empty.append(icon, text);
     list.appendChild(empty);
     return;
   }
 
-  data.comments.forEach((c) => {
-    const row = document.createElement("div");
-    row.className = "comment" + (c.is_mine ? " mine" : "");
+  const frag = document.createDocumentFragment();
+  data.comments.slice(0, cm.shown).forEach((c) => frag.appendChild(buildComment(c)));
+  const rest = data.comments.length - cm.shown;
+  if (rest > 0) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "cm-more";
+    more.textContent = `Yana ${Math.min(rest, CM_PAGE)} ta izohni ko'rsatish`;
+    more.addEventListener("click", () => { cm.shown += CM_PAGE; renderComments(); });
+    frag.appendChild(more);
+  }
+  list.appendChild(frag);
+  list.scrollTop = keepTop;
+}
 
-    const head = document.createElement("div");
-    head.className = "comment-head";
-    const name = document.createElement("strong");
-    name.textContent = c.name;
-    const when = document.createElement("span");
-    when.textContent = formatDateTime(c.created_at) + (c.edited ? " · tahrirlangan" : "");
-    head.append(name, when);
-    row.appendChild(head);
+function buildComment(c) {
+  const row = document.createElement("article");
+  row.className = "cm-item" + (c.is_mine ? " mine" : "") + (c.is_admin ? " admin" : "");
+  row.appendChild(avatarEl(c.name, c.avatar));
 
-    if (social.editingId === c.id) {
-      row.appendChild(buildCommentEditor(c));
-    } else {
-      const text = document.createElement("p");
-      text.className = "comment-body";
-      text.textContent = c.body;
-      row.appendChild(text);
-      if (c.is_mine) {
-        const actions = document.createElement("div");
-        actions.className = "comment-actions";
+  const main = document.createElement("div");
+  main.className = "cm-main";
+
+  const top = document.createElement("div");
+  top.className = "cm-top";
+  const name = document.createElement("span");
+  name.className = "cm-name";
+  name.textContent = c.name;
+  top.appendChild(name);
+  if (c.is_admin) {
+    const badge = document.createElement("span");
+    badge.className = "cm-admin";
+    badge.title = "Admin — saytning tasdiqlangan vakili";
+    const icon = document.createElement("span");
+    icon.className = "cm-badge";
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", "Admin");
+    icon.innerHTML = BADGE_SVG;
+    const tag = document.createElement("span");
+    tag.className = "cm-admin-tag";
+    tag.textContent = "Admin";
+    badge.append(icon, tag);
+    top.appendChild(badge);
+  }
+  if (c.is_mine) {
+    const you = document.createElement("span");
+    you.className = "cm-you";
+    you.textContent = "siz";
+    top.appendChild(you);
+  }
+  main.appendChild(top);
+
+  const time = document.createElement("div");
+  time.className = "cm-time";
+  time.textContent = formatDateTime(c.created_at) + (c.edited ? " · tahrirlangan" : "");
+  main.appendChild(time);
+
+  if (cm.editingId === c.id) {
+    main.appendChild(buildCommentEditor(c));
+  } else {
+    const text = document.createElement("p");
+    text.className = "cm-text";
+    text.textContent = c.body;
+    main.appendChild(text);
+
+    if (c.is_mine) {
+      const actions = document.createElement("div");
+      actions.className = "cm-actions";
+      if (c.edits_left > 0) {
         const edit = document.createElement("button");
         edit.type = "button";
-        edit.textContent = "Tahrirlash";
-        edit.addEventListener("click", () => { social.editingId = c.id; renderSocial(); });
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "danger";
-        del.textContent = "O'chirish";
-        del.addEventListener("click", () => deleteComment(productId, c.id));
-        actions.append(edit, del);
-        row.appendChild(actions);
+        edit.textContent = `Tahrirlash (${c.edits_left} ta qoldi)`;
+        edit.addEventListener("click", () => { cm.editingId = c.id; renderComments(); });
+        actions.appendChild(edit);
+      } else {
+        const done = document.createElement("span");
+        done.className = "cm-limit";
+        done.textContent = "Tahrir limiti tugagan";
+        actions.appendChild(done);
       }
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "danger";
+      del.textContent = "O'chirish";
+      del.addEventListener("click", () => deleteComment(c.id));
+      actions.appendChild(del);
+      main.appendChild(actions);
     }
-    list.appendChild(row);
-  });
+  }
+  row.appendChild(main);
+  return row;
 }
 
 function buildCommentEditor(comment) {
-  const max = social.data.comment_max_length;
+  const max = cm.data.comment_max_length;
   const wrap = document.createElement("div");
-  wrap.className = "comment-editor";
+  wrap.className = "cm-editor";
+
   const input = document.createElement("textarea");
   input.rows = 2;
   input.maxLength = max;
   input.value = comment.body;
+  input.setAttribute("aria-label", "Izohni tahrirlash");
+
+  const hint = document.createElement("div");
+  hint.className = "cm-hint";
+  const counter = () => { hint.textContent = `${input.value.length}/${max} · saqlasangiz 1 ta tahrir sarflanadi, ${comment.edits_left} tadan ${comment.edits_left - 1} ta qoladi`; };
+  counter();
+
   const err = document.createElement("div");
-  err.className = "comment-error";
+  err.className = "cm-error";
   err.setAttribute("role", "alert");
+
+  input.addEventListener("input", () => { counter(); err.textContent = ""; });
+
   const row = document.createElement("div");
-  row.className = "comment-actions";
-  const count = document.createElement("small");
-  count.textContent = `${input.value.length}/${max}`;
-  input.addEventListener("input", () => { count.textContent = `${input.value.length}/${max}`; err.textContent = ""; });
+  row.className = "cm-actions cm-actions-end";
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = "Bekor qilish";
-  cancel.addEventListener("click", () => { social.editingId = null; renderSocial(); });
+  cancel.addEventListener("click", () => { cm.editingId = null; renderComments(); });
   const save = document.createElement("button");
   save.type = "button";
   save.className = "primary";
@@ -1028,40 +1276,50 @@ function buildCommentEditor(comment) {
   save.addEventListener("click", async () => {
     const text = input.value.trim();
     if (!text) { err.textContent = "Izoh bo'sh bo'lmasin."; return; }
+    if (text === comment.body) { cm.editingId = null; renderComments(); return; } // o'zgarmagan -- tahrir sarflanmaydi
+    if (cm.busy) return;
+    cm.busy = true;
     save.disabled = true;
     try {
       await api(`/comments/${comment.id}`, { method: "PUT", body: JSON.stringify({ body: text }) });
-      social.editingId = null;
-      await loadSocial(social.productId);
+      cm.editingId = null;
+      await loadComments(cm.productId);
       showToast("Izoh yangilandi.");
     } catch (e) {
       if (e.status === 401) return;
-      err.textContent = e.message;
+      err.textContent = friendlyError(e);
       save.disabled = false;
+    } finally {
+      cm.busy = false;
     }
   });
-  row.append(count, cancel, save);
-  wrap.append(input, err, row);
-  setTimeout(() => input.focus(), 30);
+  row.append(cancel, save);
+
+  wrap.append(input, hint, err, row);
+  setTimeout(() => { try { input.focus({ preventScroll: true }); } catch (_) { /* e'tiborsiz */ } }, 30);
   return wrap;
 }
 
-function renderSocialForm() {
-  const holder = el("socialForm");
-  const data = social.data;
+/* Pastdagi yozish joyi: kirmagan bo'lsa -- tushunarli "kirish" tugmasi; limit tugagan bo'lsa -- izoh; aks holda forma. */
+function renderComposer() {
+  const holder = el("commentsForm");
+  const data = cm.data;
   holder.textContent = "";
 
   if (!state.customer) {
+    const info = document.createElement("p");
+    info.className = "cm-hint";
+    info.textContent = "Izohlarni hamma o'qiy oladi. Izoh yozish uchun Google akkauntingiz bilan kiring.";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-ghost btn-block btn-sm";
-    btn.textContent = "Izoh yozish uchun Google orqali kiring";
+    btn.className = "btn btn-primary btn-block";
+    btn.textContent = "Google orqali kirish";
     btn.addEventListener("click", () => {
       requireLogin("Izoh yozish uchun Google akkauntingiz bilan kiring.", () => {
-        if (social.productId) loadSocial(social.productId);
+        if (cm.productId) loadComments(cm.productId);
       });
     });
-    holder.appendChild(btn);
+    holder.append(info, btn);
     return;
   }
 
@@ -1069,65 +1327,102 @@ function renderSocialForm() {
   const left = Math.max(0, data.comment_limit - data.my_comment_count);
   if (left === 0) {
     const full = document.createElement("p");
-    full.className = "social-note";
-    full.textContent = `Siz bu mahsulotga ${data.comment_limit} ta izoh yozib bo'ldingiz. Yangisini yozish uchun eskisini o'chiring yoki tahrirlang.`;
+    full.className = "cm-hint cm-full";
+    full.textContent = `Siz bu mahsulotga ${data.comment_limit} ta izoh yozib bo'ldingiz. Yangisini yozish uchun avval eskisini o'chiring.`;
     holder.appendChild(full);
     return;
   }
 
   const form = document.createElement("form");
-  form.className = "comment-form";
+  form.className = "cm-form";
   form.noValidate = true;
+
+  const line = document.createElement("div");
+  line.className = "cm-compose";
+  line.appendChild(avatarEl(state.customer.name, state.customer.picture_url));
+
   const input = document.createElement("textarea");
-  input.rows = 2;
+  input.rows = 1;
   input.maxLength = max;
+  input.value = cm.draft || "";
   input.placeholder = "Fikringizni yozing…";
   input.setAttribute("aria-label", "Izoh matni");
+  input.setAttribute("enterkeyhint", "send");
+  input.autocomplete = "off";
+
+  const send = document.createElement("button");
+  send.type = "submit";
+  send.className = "cm-send";
+  send.setAttribute("aria-label", "Yuborish");
+  send.innerHTML = SEND_SVG;
+
+  line.append(input, send);
+
   const err = document.createElement("div");
-  err.className = "comment-error";
+  err.className = "cm-error";
   err.setAttribute("role", "alert");
-  const foot = document.createElement("div");
-  foot.className = "comment-form-foot";
-  const info = document.createElement("small");
-  const paintInfo = () => { info.textContent = `${input.value.length}/${max} · yana ${left} ta izoh yozish mumkin`; };
-  paintInfo();
-  input.addEventListener("input", () => { paintInfo(); err.textContent = ""; });
-  const submit = document.createElement("button");
-  submit.type = "submit";
-  submit.className = "btn btn-primary btn-sm";
-  submit.textContent = "Yuborish";
-  foot.append(info, submit);
-  form.append(input, err, foot);
+
+  const hint = document.createElement("div");
+  hint.className = "cm-hint cm-hint-row";
+  const count = document.createElement("span");
+  const note = document.createElement("span");
+  note.textContent = `Yana ${left} ta izoh yozishingiz mumkin`;
+  hint.append(count, note);
+
+  const privacy = document.createElement("p");
+  privacy.className = "cm-hint cm-privacy";
+  privacy.textContent = "Izohda ismingiz va Google profil rasmingiz ko'rinadi. Email ko'rinmaydi.";
+
+  const grow = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 110)}px`;
+  };
+  const paint = () => { count.textContent = `${input.value.length}/${max}`; };
+  paint();
+  input.addEventListener("input", () => { cm.draft = input.value; paint(); grow(); err.textContent = ""; });
+  input.addEventListener("keydown", (e) => {
+    // Enter -- yuborish (Shift+Enter ham bir qatorga aylanadi: server qatorlarni bo'shliqqa almashtiradi).
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (form.requestSubmit) form.requestSubmit(); else send.click(); }
+  });
+
+  form.append(line, err, hint, privacy);
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) { err.textContent = "Izoh bo'sh bo'lmasin."; return; }
-    submit.disabled = true;
+    if (cm.busy) return;
+    cm.busy = true;
+    send.disabled = true;
     try {
-      await api(`/products/${social.productId}/comments`, { method: "POST", body: JSON.stringify({ body: text }) });
-      input.value = "";
-      await loadSocial(social.productId);
+      await api(`/products/${cm.productId}/comments`, { method: "POST", body: JSON.stringify({ body: text }) });
+      cm.draft = "";
+      cm.shown = CM_PAGE;
+      await loadComments(cm.productId, { top: true });
       showToast("Izoh qo'shildi.");
     } catch (e2) {
       if (e2.status === 401) return;
-      err.textContent = e2.message;
+      err.textContent = friendlyError(e2);
     } finally {
-      submit.disabled = false;
+      cm.busy = false;
+      send.disabled = false;
     }
   });
+
   holder.appendChild(form);
+  grow();
 }
 
-async function deleteComment(productId, commentId) {
+async function deleteComment(commentId) {
   if (!(await lgConfirm({ tone: "danger", title: "Izohni o'chirish", message: "Izohingiz hamma uchun o'chiriladi.", confirmText: "Ha, o'chirish" }))) return;
+  const productId = cm.productId;
   try {
     await api(`/comments/${commentId}`, { method: "DELETE" });
-    if (social.productId === productId) await loadSocial(productId);
+    if (cm.productId === productId) await loadComments(productId);
     showToast("Izoh o'chirildi.");
   } catch (err) {
     if (err.status === 401) return;
-    showToast(err.message, true);
+    showToast(friendlyError(err), true);
   }
 }
 
@@ -1157,11 +1452,11 @@ document.addEventListener("lg:auth", (e) => {
   socialUserId = id;
   if (!id) {
     (state.products || []).forEach((p) => { p.liked = false; paintProductSocial(p.id); });
-    if (social.data) { social.data.liked = false; social.data.my_comment_count = 0; social.data.comments.forEach((c) => { c.is_mine = false; }); social.editingId = null; renderSocial(); }
+    if (cm.data) { cm.data.liked = false; cm.data.my_comment_count = 0; cm.data.comments.forEach((c) => { c.is_mine = false; c.edits_left = 0; }); cm.editingId = null; renderComments(); }
     return;
   }
   refreshProductSocial();
-  if (el("productModal") && el("productModal").classList.contains("open") && social.productId) loadSocial(social.productId);
+  if (el("commentsModal") && el("commentsModal").classList.contains("open") && cm.productId) loadComments(cm.productId);
 });
 
 /* Savat */

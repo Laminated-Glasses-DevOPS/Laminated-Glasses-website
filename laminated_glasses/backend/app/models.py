@@ -96,6 +96,9 @@ class Customer(Base):
     # foydalanuvchilar statistikasi shu bo'yicha; created_at eski, ism bilan
     # ro'yxatdan o'tgan mijozlarda eskiroq bo'lishi mumkin).
     google_registered_at = Column(DateTime, nullable=True)
+    # 1 = admin paneldan "admin" qilib tayinlangan mijoz: izohlarida tasdiqlash
+    # belgisi (✔ Admin) ko'rinadi. Bu admin panelga kirish huquqi BERMAYDI.
+    is_staff = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -407,3 +410,5 @@ class ProductComment(Base):
     body = Column(String(500), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     edited_at = Column(DateTime, nullable=True)
+    # Izoh necha marta tahrirlangan (limit: config.COMMENT_MAX_EDITS).
+    edit_count = Column(Integer, nullable=False, default=0, server_default="0")

@@ -110,6 +110,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
         Izohlar
       </button>
+      <button data-view="staff" data-title="Adminlar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c.6-3.6 3.4-5.6 7-5.6s6.4 2 7 5.6"/><path d="m15.4 4.6 1.2 1.2 2.3-2.4"/></svg>
+        Adminlar
+      </button>
       <button data-view="security" data-title="Xavfsizlik">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3.5v5c0 4.6-3 8.4-7 9.5-4-1.1-7-4.9-7-9.5v-5L12 3z"/><path d="M9.5 12l1.8 1.8L14.7 10"/></svg>
         Xavfsizlik
@@ -351,6 +355,26 @@
         </div>
         <div id="adminCommentsList"><p class="empty-row" style="padding:20px;">Yuklanmoqda...</p></div>
         <div class="comments-more"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" hidden>Yana yuklash</button></div>
+      </div>
+    </section>
+
+    <!-- Adminlarni tayinlash -->
+    <section class="view" id="view-staff">
+      <div class="dash-topbar">
+        <div>
+          <h2>Adminlar</h2>
+          <p>Saytga Google orqali kirgan foydalanuvchini "admin" qilib tayinlang: uning izohlarida profil rasmi bilan birga tasdiqlash belgisi (✔ Admin) ko'rinadi. Bu belgi admin panelga kirish huquqini bermaydi.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshStaffBtn">Yangilash</button>
+      </div>
+      <div class="table-card" style="padding:18px 20px;">
+        <div class="comments-toolbar">
+          <input type="text" id="staffSearch" placeholder="Ism yoki email bo'yicha qidirish..." />
+          <button class="btn btn-ghost btn-sm" id="staffOnlyBtn" type="button" aria-pressed="false">Faqat adminlar</button>
+          <span class="comments-total" id="staffTotal"></span>
+        </div>
+        <div id="staffList"><p class="empty-row" style="padding:20px;">Yuklanmoqda...</p></div>
+        <div class="comments-more"><button class="btn btn-ghost btn-sm" id="staffMoreBtn" hidden>Yana yuklash</button></div>
       </div>
     </section>
 
