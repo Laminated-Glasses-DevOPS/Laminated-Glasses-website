@@ -20,6 +20,11 @@ class ProductPublic(BaseModel):
     sale_price: float
     image_url: Optional[str] = None
     image_urls: List[str] = []
+    # Ijtimoiy ko'rsatkichlar (like va izohlar soni; `liked` -- shu mijoz
+    # like bosganmi, kirmagan mehmon uchun doim False).
+    like_count: int = 0
+    comment_count: int = 0
+    liked: bool = False
 
     class Config:
         from_attributes = True
@@ -535,3 +540,65 @@ class DatabaseRestoreConfirm(BaseModel):
     (butun bazani almashtirish) bajarishiga qo'shimcha to'siq."""
 
     current_password: str = Field(min_length=1, max_length=200)
+
+
+class CommentIn(BaseModel):
+    """Izoh matni. Aniq uzunlik/belgilar tekshiruvi utils.clean_comment_text
+    da (xato matni foydalanuvchiga chiroyli ko'rinishi uchun); bu yerda faqat
+    juda katta so'rovlardan himoya."""
+
+    body: str = Field(min_length=1, max_length=1000)
+
+
+class CommentOut(BaseModel):
+    """Ommaviy izoh: FAQAT ism va matn (+ vaqt). Email, rasm, mijoz ID'si yo'q."""
+
+    id: int
+    name: str
+    body: str
+    created_at: datetime
+    edited: bool = False
+    is_mine: bool = False
+
+    @field_serializer("created_at")
+    def _serialize_utc(self, value: datetime) -> str:
+        return value.isoformat() + "Z"
+
+
+class ProductSocialOut(BaseModel):
+    like_count: int
+    liked: bool
+    comment_count: int
+    comments: List[CommentOut]
+    my_comment_count: int = 0
+    comment_limit: int
+    comment_max_length: int
+
+
+class LikeOut(BaseModel):
+    liked: bool
+    like_count: int
+
+
+class AdminCommentOut(BaseModel):
+    """Admin moderatsiyasi uchun izoh: ommaviy javobdan farqli o'laroq admin
+    izoh egasining emailini ham ko'radi (kim yozganini aniqlash uchun)."""
+
+    id: int
+    product_id: int
+    product_name: str
+    customer_id: int
+    customer_name: str
+    customer_email: Optional[str] = None
+    body: str
+    created_at: datetime
+    edited_at: Optional[datetime] = None
+
+    @field_serializer("created_at", "edited_at")
+    def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
+        return (value.isoformat() + "Z") if value else None
+
+
+class AdminCommentListOut(BaseModel):
+    total: int
+    items: List[AdminCommentOut]

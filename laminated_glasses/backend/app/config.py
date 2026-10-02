@@ -164,6 +164,13 @@ CART_TTL_DAYS = int(os.getenv("CART_TTL_DAYS", "7"))
 CONSTRUCTOR_LIMIT_HOURS = max(1, int(os.getenv("CONSTRUCTOR_LIMIT_HOURS", "24")))
 MAX_CART_ITEM_QUANTITY = 99
 
+# Mahsulot izohlari: bitta Google akkaunt BITTA mahsulotga eng ko'pi bilan
+# shuncha izoh yoza oladi va har bir izoh shuncha belgidan oshmaydi.
+COMMENT_MAX_PER_USER_PER_PRODUCT = 5
+COMMENT_MAX_LENGTH = 100
+# Mahsulot oynasida ko'rsatiladigan eng yangi izohlar soni (sahifa og'irlashmasligi uchun).
+COMMENT_LIST_LIMIT = 100
+
 # Konstruktor rasmlari yoshini tekshirish oralig'i (daqiqa). Fayl faqat
 # CONSTRUCTOR_LIMIT_HOURS dan eski bo'lsagina o'chadi; bu qiymat shunchaki
 # tekshiruv qanchalik tez-tez bo'lishini bildiradi.

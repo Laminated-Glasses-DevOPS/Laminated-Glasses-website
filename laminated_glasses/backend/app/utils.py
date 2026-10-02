@@ -2,6 +2,7 @@
 formatlash."""
 
 import re
+import unicodedata
 
 import uuid
 from datetime import datetime
@@ -198,3 +199,30 @@ def clean_person_name(raw: str) -> str:
     if not _NAME_ALLOWED.match(name):
         raise ValueError("Ismda faqat harflar, bo'sh joy, apostrof va tire bo'lishi mumkin.")
     return name
+
+
+# Ko'rinmas/yo'nalishni o'zgartiruvchi belgilar: izohni "bo'sh"dek ko'rsatish yoki
+# matn yo'nalishini buzib, boshqa odam ismi/matni ustiga yozish uchun ishlatilishi mumkin.
+_INVISIBLE_CHARS = dict.fromkeys(
+    [0x200B, 0x200C, 0x200E, 0x200F, 0x2060, 0xFEFF, 0x00AD]
+    + list(range(0x202A, 0x202F))
+    + list(range(0x2066, 0x206A))
+)
+
+
+def clean_comment_text(raw: str) -> str:
+    """Izoh matnini tekshiradi va tozalaydi. Yaroqsiz bo'lsa ValueError
+    (matni foydalanuvchiga ko'rsatiladi) ko'taradi.
+
+    Harf, raqam, simvol, emoji -- hammasiga ruxsat (matn brauzerda faqat
+    textContent orqali chiqadi, shuning uchun HTML sifatida ishlamaydi).
+    Qatorlar/ketma-ket bo'shliqlar bitta bo'shliqqa aylantiriladi."""
+    text = str(raw or "").translate(_INVISIBLE_CHARS)
+    text = " ".join(text.split())
+    if not text:
+        raise ValueError("Izoh bo'sh bo'lmasin.")
+    if any(unicodedata.category(ch) == "Cc" for ch in text):
+        raise ValueError("Izohda ruxsat etilmagan belgilar bor.")
+    if len(text) > config.COMMENT_MAX_LENGTH:
+        raise ValueError(f"Izoh {config.COMMENT_MAX_LENGTH} ta belgidan oshmasin.")
+    return text

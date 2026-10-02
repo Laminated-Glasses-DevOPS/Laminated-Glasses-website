@@ -622,10 +622,12 @@ function renderProducts() {
       (p, i) => `
       <article class="product-card reveal" data-id="${p.id}">
         <div class="product-media" data-open="${p.id}">${mediaHTML(p, i)}</div>
+        ${likeButtonHTML(p, "card")}
         <div class="product-body">
           <span class="product-tag">${escapeHtml(p.category)}</span>
           <h3 class="product-name" data-open="${p.id}">${escapeHtml(p.name)}</h3>
           <p class="product-desc">${escapeHtml(p.description || "")}</p>
+          <button class="comment-link" type="button" data-open="${p.id}" data-comments-for="${p.id}">${commentLinkText(p.comment_count)}</button>
           <div class="product-foot">
             <div class="product-price">${formatPrice(p.sale_price)}<span>so'm</span></div>
             <button class="btn btn-primary btn-sm" data-add="${p.id}">Savatga</button>
@@ -675,6 +677,13 @@ function renderProducts() {
 
   grid.querySelectorAll("[data-add]").forEach((btn) => {
     btn.addEventListener("click", () => addToCart(Number(btn.dataset.add)));
+  });
+
+  grid.querySelectorAll("[data-like]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleLike(Number(btn.dataset.like));
+    });
   });
 
   grid.querySelectorAll("[data-open]").forEach((node) => {
@@ -798,6 +807,7 @@ function openProduct(product) {
   el("modalDesc").textContent = product.description || "Tavsif kiritilmagan.";
   el("modalPrice").innerHTML = `${formatPrice(product.sale_price)}<span>so'm</span>`;
   openModal("productModal");
+  openSocial(product);
 }
 
 el("modalAddBtn").addEventListener("click", () => {
@@ -805,6 +815,353 @@ el("modalAddBtn").addEventListener("click", () => {
     addToCart(state.activeProduct.id);
     closeModal("productModal");
   }
+});
+
+/* ---------- Like (yurakcha) va izohlar ----------
+   Faqat Google orqali kirganlar like bosa oladi va izoh yoza oladi; izohlarni
+   hamma ko'radi. Izohda faqat ISM va matn chiqadi (email/rasm yo'q). Hamma
+   matn DOMga faqat textContent orqali yoziladi -- HTML sifatida ishlamaydi.
+   Limit: bitta akkaunt bitta mahsulotga 5 tagacha izoh, har biri 100 belgigacha
+   (aniq qiymatlar serverdan keladi). */
+
+const HEART_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.3C1 8.4 2.9 5 6.2 5c2 0 3.2 1.1 3.8 2.1h4C14.6 6.1 15.8 5 17.8 5c3.3 0 5.2 3.4 3.8 6.7C19.5 16.4 12 21 12 21z" transform="translate(0 -.5)"/></svg>';
+
+function likeButtonHTML(p, where) {
+  const cls = where === "card" ? "like-btn like-card" : "like-btn like-big";
+  return `<button class="${cls}${p.liked ? " liked" : ""}" type="button" data-like="${p.id}" data-like-where="${where}" aria-pressed="${p.liked ? "true" : "false"}" aria-label="${p.liked ? "Like'ni qaytarib olish" : "Yoqdi"}">${HEART_SVG}<span class="like-num">${p.like_count || 0}</span></button>`;
+}
+
+function commentLinkText(n) {
+  return n > 0 ? `💬 Izohlar (${n})` : "💬 Izoh yozish";
+}
+
+function productById(id) {
+  return (state.products || []).find((p) => p.id === id) || null;
+}
+
+/* Kartadagi va oynadagi yurakcha/hisoblagichlarni state bilan moslaydi. */
+function paintProductSocial(productId) {
+  const p = productById(productId);
+  if (!p) return;
+  document.querySelectorAll(`[data-like="${productId}"]`).forEach((btn) => {
+    btn.classList.toggle("liked", !!p.liked);
+    btn.setAttribute("aria-pressed", p.liked ? "true" : "false");
+    btn.setAttribute("aria-label", p.liked ? "Like'ni qaytarib olish" : "Yoqdi");
+    const num = btn.querySelector(".like-num");
+    if (num) num.textContent = p.like_count || 0;
+  });
+  document.querySelectorAll(`[data-comments-for="${productId}"]`).forEach((node) => {
+    node.textContent = commentLinkText(p.comment_count);
+  });
+}
+
+function requireLogin(text, onSuccess) {
+  openGate(null, { text, onSuccess });
+}
+
+const likePending = new Set();
+async function toggleLike(productId) {
+  if (!state.customer) {
+    requireLogin("Mahsulotga like bosish uchun Google akkauntingiz bilan kiring.", () => toggleLike(productId));
+    return;
+  }
+  if (likePending.has(productId)) return;
+  const p = productById(productId);
+  if (!p) return;
+  likePending.add(productId);
+  try {
+    const res = await api(`/products/${productId}/like`, { method: p.liked ? "DELETE" : "PUT" });
+    p.liked = res.liked;
+    p.like_count = res.like_count;
+    paintProductSocial(productId);
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    likePending.delete(productId);
+  }
+}
+
+function formatDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+  if (isNaN(d)) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const social = { productId: null, data: null, editingId: null, busy: false };
+
+/* Mahsulot oynasiga izohlar bo'limi bir marta qo'shiladi (barcha sahifalarda bir xil). */
+function ensureSocialUI() {
+  if (el("socialBox")) return;
+  const body = document.querySelector("#productModal .modal-body");
+  if (!body) return;
+  const box = document.createElement("section");
+  box.id = "socialBox";
+  box.className = "social-box";
+  box.innerHTML = `
+    <div class="social-head">
+      <h4 id="socialTitle">Izohlar</h4>
+      <span id="socialLikeHolder"></span>
+    </div>
+    <p class="social-note">Izohda faqat ismingiz va matn ko'rinadi — profil rasmingiz va emailingiz ko'rinmaydi.</p>
+    <div id="socialForm"></div>
+    <div class="social-list" id="socialList" aria-live="polite"></div>`;
+  body.appendChild(box);
+}
+
+function openSocial(product) {
+  ensureSocialUI();
+  if (!el("socialBox")) return;
+  social.productId = product.id;
+  social.data = null;
+  social.editingId = null;
+  el("socialLikeHolder").innerHTML = likeButtonHTML(product, "modal");
+  el("socialLikeHolder").querySelector("[data-like]").addEventListener("click", () => toggleLike(product.id));
+  el("socialTitle").textContent = "Izohlar";
+  el("socialForm").innerHTML = "";
+  el("socialList").innerHTML = '<p class="social-empty">Yuklanmoqda…</p>';
+  loadSocial(product.id);
+}
+
+async function loadSocial(productId) {
+  try {
+    const data = await api(`/products/${productId}/social`);
+    if (social.productId !== productId) return; // foydalanuvchi boshqa mahsulotni ochib bo'ldi
+    social.data = data;
+    const p = productById(productId);
+    if (p) {
+      p.like_count = data.like_count;
+      p.liked = data.liked;
+      p.comment_count = data.comment_count;
+      paintProductSocial(productId);
+    }
+    renderSocial();
+  } catch (err) {
+    if (social.productId !== productId) return;
+    el("socialList").innerHTML = '<p class="social-empty">Izohlarni yuklab bo\'lmadi. Keyinroq urinib ko\'ring.</p>';
+  }
+}
+
+function renderSocial() {
+  const data = social.data;
+  if (!data) return;
+  const productId = social.productId;
+  el("socialTitle").textContent = `Izohlar (${data.comment_count})`;
+  renderSocialForm();
+
+  const list = el("socialList");
+  list.textContent = "";
+  if (!data.comments.length) {
+    const empty = document.createElement("p");
+    empty.className = "social-empty";
+    empty.textContent = "Hozircha izoh yo'q. Birinchi bo'lib yozing!";
+    list.appendChild(empty);
+    return;
+  }
+
+  data.comments.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "comment" + (c.is_mine ? " mine" : "");
+
+    const head = document.createElement("div");
+    head.className = "comment-head";
+    const name = document.createElement("strong");
+    name.textContent = c.name;
+    const when = document.createElement("span");
+    when.textContent = formatDateTime(c.created_at) + (c.edited ? " · tahrirlangan" : "");
+    head.append(name, when);
+    row.appendChild(head);
+
+    if (social.editingId === c.id) {
+      row.appendChild(buildCommentEditor(c));
+    } else {
+      const text = document.createElement("p");
+      text.className = "comment-body";
+      text.textContent = c.body;
+      row.appendChild(text);
+      if (c.is_mine) {
+        const actions = document.createElement("div");
+        actions.className = "comment-actions";
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.textContent = "Tahrirlash";
+        edit.addEventListener("click", () => { social.editingId = c.id; renderSocial(); });
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "danger";
+        del.textContent = "O'chirish";
+        del.addEventListener("click", () => deleteComment(productId, c.id));
+        actions.append(edit, del);
+        row.appendChild(actions);
+      }
+    }
+    list.appendChild(row);
+  });
+}
+
+function buildCommentEditor(comment) {
+  const max = social.data.comment_max_length;
+  const wrap = document.createElement("div");
+  wrap.className = "comment-editor";
+  const input = document.createElement("textarea");
+  input.rows = 2;
+  input.maxLength = max;
+  input.value = comment.body;
+  const err = document.createElement("div");
+  err.className = "comment-error";
+  err.setAttribute("role", "alert");
+  const row = document.createElement("div");
+  row.className = "comment-actions";
+  const count = document.createElement("small");
+  count.textContent = `${input.value.length}/${max}`;
+  input.addEventListener("input", () => { count.textContent = `${input.value.length}/${max}`; err.textContent = ""; });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Bekor qilish";
+  cancel.addEventListener("click", () => { social.editingId = null; renderSocial(); });
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary";
+  save.textContent = "Saqlash";
+  save.addEventListener("click", async () => {
+    const text = input.value.trim();
+    if (!text) { err.textContent = "Izoh bo'sh bo'lmasin."; return; }
+    save.disabled = true;
+    try {
+      await api(`/comments/${comment.id}`, { method: "PUT", body: JSON.stringify({ body: text }) });
+      social.editingId = null;
+      await loadSocial(social.productId);
+      showToast("Izoh yangilandi.");
+    } catch (e) {
+      if (e.status === 401) return;
+      err.textContent = e.message;
+      save.disabled = false;
+    }
+  });
+  row.append(count, cancel, save);
+  wrap.append(input, err, row);
+  setTimeout(() => input.focus(), 30);
+  return wrap;
+}
+
+function renderSocialForm() {
+  const holder = el("socialForm");
+  const data = social.data;
+  holder.textContent = "";
+
+  if (!state.customer) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-ghost btn-block btn-sm";
+    btn.textContent = "Izoh yozish uchun Google orqali kiring";
+    btn.addEventListener("click", () => {
+      requireLogin("Izoh yozish uchun Google akkauntingiz bilan kiring.", () => {
+        if (social.productId) loadSocial(social.productId);
+      });
+    });
+    holder.appendChild(btn);
+    return;
+  }
+
+  const max = data.comment_max_length;
+  const left = Math.max(0, data.comment_limit - data.my_comment_count);
+  if (left === 0) {
+    const full = document.createElement("p");
+    full.className = "social-note";
+    full.textContent = `Siz bu mahsulotga ${data.comment_limit} ta izoh yozib bo'ldingiz. Yangisini yozish uchun eskisini o'chiring yoki tahrirlang.`;
+    holder.appendChild(full);
+    return;
+  }
+
+  const form = document.createElement("form");
+  form.className = "comment-form";
+  form.noValidate = true;
+  const input = document.createElement("textarea");
+  input.rows = 2;
+  input.maxLength = max;
+  input.placeholder = "Fikringizni yozing…";
+  input.setAttribute("aria-label", "Izoh matni");
+  const err = document.createElement("div");
+  err.className = "comment-error";
+  err.setAttribute("role", "alert");
+  const foot = document.createElement("div");
+  foot.className = "comment-form-foot";
+  const info = document.createElement("small");
+  const paintInfo = () => { info.textContent = `${input.value.length}/${max} · yana ${left} ta izoh yozish mumkin`; };
+  paintInfo();
+  input.addEventListener("input", () => { paintInfo(); err.textContent = ""; });
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "btn btn-primary btn-sm";
+  submit.textContent = "Yuborish";
+  foot.append(info, submit);
+  form.append(input, err, foot);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) { err.textContent = "Izoh bo'sh bo'lmasin."; return; }
+    submit.disabled = true;
+    try {
+      await api(`/products/${social.productId}/comments`, { method: "POST", body: JSON.stringify({ body: text }) });
+      input.value = "";
+      await loadSocial(social.productId);
+      showToast("Izoh qo'shildi.");
+    } catch (e2) {
+      if (e2.status === 401) return;
+      err.textContent = e2.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  holder.appendChild(form);
+}
+
+async function deleteComment(productId, commentId) {
+  if (!(await lgConfirm({ tone: "danger", title: "Izohni o'chirish", message: "Izohingiz hamma uchun o'chiriladi.", confirmText: "Ha, o'chirish" }))) return;
+  try {
+    await api(`/comments/${commentId}`, { method: "DELETE" });
+    if (social.productId === productId) await loadSocial(productId);
+    showToast("Izoh o'chirildi.");
+  } catch (err) {
+    if (err.status === 401) return;
+    showToast(err.message, true);
+  }
+}
+
+/* Kirish/chiqish holati o'zgarganda: yurakchalar (kim like bosgani) va izoh
+   formasi yangilanadi. Mahsulotlar skeletsiz, jimgina qayta o'qiladi. */
+let socialUserId = null;
+async function refreshProductSocial() {
+  if (!state.products || !state.products.length) return;
+  const params = new URLSearchParams();
+  if (state.activeCategory) params.set("category", state.activeCategory);
+  if (state.search) params.set("search", state.search);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  try {
+    const fresh = await api(`/products${query}`);
+    fresh.forEach((f) => {
+      const p = productById(f.id);
+      if (!p) return;
+      p.like_count = f.like_count; p.comment_count = f.comment_count; p.liked = f.liked;
+      paintProductSocial(p.id);
+    });
+  } catch (_) { /* e'tiborsiz */ }
+}
+
+document.addEventListener("lg:auth", (e) => {
+  const id = e.detail ? e.detail.id : null;
+  if (id === socialUserId) return; // faqat ism o'zgargan -- hech narsa qilish shart emas
+  socialUserId = id;
+  if (!id) {
+    (state.products || []).forEach((p) => { p.liked = false; paintProductSocial(p.id); });
+    if (social.data) { social.data.liked = false; social.data.my_comment_count = 0; social.data.comments.forEach((c) => { c.is_mine = false; }); social.editingId = null; renderSocial(); }
+    return;
+  }
+  refreshProductSocial();
+  if (el("productModal") && el("productModal").classList.contains("open") && social.productId) loadSocial(social.productId);
 });
 
 /* Savat */

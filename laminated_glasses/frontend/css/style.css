@@ -2180,3 +2180,195 @@ body:has(.hero) .hero-stats span{display:block;font-size:.75rem;color:#637e90}
   border-color: var(--line-strong);
   background: transparent;
 }
+
+/* ---------- Like (yurakcha) va izohlar ---------- */
+
+.product-card { position: relative; }
+
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  color: var(--navy-soft);
+  font: 600 0.82rem/1 var(--font-body);
+  padding: 7px 11px 7px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.like-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  transition: fill 0.15s var(--ease), transform 0.2s var(--ease);
+}
+
+.like-btn:hover { border-color: #e0566a; color: #e0566a; }
+.like-btn:active svg { transform: scale(0.8); }
+.like-btn:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+.like-btn.liked {
+  color: #e0364f;
+  border-color: #f2a3ae;
+  background: #fff1f3;
+}
+
+.like-btn.liked svg { fill: #e0364f; }
+
+.like-card {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 14px rgba(6, 38, 61, 0.16);
+}
+
+.like-card.liked { background: #fff1f3; }
+
+.comment-link {
+  align-self: flex-start;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sky-deep);
+  font: 600 0.82rem/1.4 var(--font-body);
+  cursor: pointer;
+}
+
+.comment-link:hover { text-decoration: underline; }
+
+.social-box {
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.social-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.social-head h4 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.modal-body .social-note,
+.social-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--navy-soft);
+}
+
+.social-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.comment {
+  background: var(--ice);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.comment.mine { background: #e6f1f9; box-shadow: inset 3px 0 0 var(--sky); }
+
+.comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+  font-size: 0.84rem;
+}
+
+.comment-head strong { color: var(--navy); overflow-wrap: anywhere; }
+.comment-head span { font-size: 0.72rem; color: var(--navy-soft); }
+
+.modal-body .comment-body {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--navy);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.comment-actions small { margin-right: auto; font-size: 0.74rem; color: var(--navy-soft); }
+
+.comment-actions button {
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  font: 600 0.78rem/1 var(--font-body);
+  color: var(--sky-deep);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.comment-actions button:hover { background: rgba(46, 134, 200, 0.12); }
+.comment-actions button.danger { color: #b3413f; }
+.comment-actions button.danger:hover { background: rgba(179, 65, 63, 0.1); }
+.comment-actions button.primary { background: var(--sky-deep); color: var(--white); padding: 6px 12px; }
+.comment-actions button.primary:hover { background: var(--navy); }
+.comment-actions button:disabled { opacity: 0.55; cursor: default; }
+
+.comment-form textarea,
+.comment-editor textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 56px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--navy);
+  font: 400 0.92rem/1.45 var(--font-body);
+}
+
+.comment-form textarea:focus,
+.comment-editor textarea:focus {
+  outline: 2px solid var(--sky-soft);
+  border-color: var(--sky);
+}
+
+.comment-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.comment-form-foot small { font-size: 0.74rem; color: var(--navy-soft); }
+
+.comment-error { min-height: 16px; font-size: 0.8rem; color: #b3413f; }
+.comment-error:empty { min-height: 0; }

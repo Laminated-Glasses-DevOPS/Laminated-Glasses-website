@@ -372,3 +372,38 @@ class ConstructorUsage(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     used_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ProductLike(Base):
+    """Mahsulotga bosilgan "yurakcha". Bitta Google akkaunt bitta mahsulotga
+    faqat BITTA like bosa oladi (unique) -- qayta bosilsa, like olib tashlanadi
+    (qatori o'chadi). Faqat Google orqali kirgan mijoz bosa oladi."""
+
+    __tablename__ = "product_likes"
+    __table_args__ = (
+        UniqueConstraint("product_id", "customer_id", name="uq_like_product_customer"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProductComment(Base):
+    """Mahsulotga yozilgan izoh -- barcha foydalanuvchilarga ko'rinadi.
+
+    Izohni faqat Google orqali kirgan mijoz yozadi. Ommaviy javobda faqat
+    mijozning ISMI va izoh matni chiqadi (email, rasm va ID chiqmaydi --
+    xavfsizlik uchun). Mijoz o'z izohini tahrirlashi/o'chirishi mumkin;
+    tahrirlanganda `edited_at` to'ldiriladi. Limit: bitta akkaunt bitta
+    mahsulotga config.COMMENT_MAX_PER_USER_PER_PRODUCT tagacha izoh yozadi."""
+
+    __tablename__ = "product_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    body = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    edited_at = Column(DateTime, nullable=True)

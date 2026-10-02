@@ -1614,3 +1614,25 @@ body.no-scroll {
 }
 .sec-item.ok .sec-dot { background: #e3f5ea; color: #1f8a4c; }
 .sec-item.warn .sec-dot { background: var(--amber-soft); color: #b9741a; }
+
+
+/* ---------- Izohlar moderatsiyasi ---------- */
+.comments-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.comments-toolbar input {
+  flex: 1 1 260px; max-width: 420px; padding: 10px 14px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 0.85rem; outline: none;
+}
+.comments-toolbar input:focus { border-color: var(--sky); }
+.comments-total { font-size: 0.82rem; font-weight: 600; color: var(--navy-soft); }
+.comment-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 14px 0; border-top: 1px solid var(--line);
+}
+.comment-row:first-child { border-top: 0; }
+.comment-row-main { min-width: 0; flex: 1; }
+.comment-row-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 0.8rem; color: var(--navy-soft); }
+.comment-row-meta strong { color: var(--navy); font-size: 0.88rem; }
+.comment-row-product { margin-top: 3px; font-size: 0.78rem; color: var(--navy-soft); }
+.comment-row-body { margin: 6px 0 0; font-size: 0.92rem; line-height: 1.5; color: var(--navy); overflow-wrap: anywhere; white-space: pre-wrap; }
+.comments-more { text-align: center; margin-top: 12px; }
+@media (max-width: 600px) { .comment-row { flex-direction: column; } }

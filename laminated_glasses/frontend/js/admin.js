@@ -1738,7 +1738,7 @@ document.getElementById("restoreConfigBundleForm")?.addEventListener("submit", a
   const file = fileInput.files[0];
   if (!file) return;
 
-  const confirmed = await lgConfirm({ tone: "danger", title: "To'plamni qo'llash", message: "Zip ichidagi har bir mavjud bo'lim (rasmlar, mahsulotlar, konstruktor sozlamalari, parol, statistika, foydalanuvchilar) joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan bo'limlar tegilmaydi.", confirmText: "Ha, qo'llash" });
+  const confirmed = await lgConfirm({ tone: "danger", title: "To'plamni qo'llash", message: "Zip ichidagi har bir mavjud bo'lim (rasmlar, mahsulotlar, konstruktor sozlamalari, parol, statistika, foydalanuvchilar, izohlar va like'lar) joriy holat bilan ALMASHTIRILADI. Zipda bo'lmagan bo'limlar tegilmaydi.", confirmText: "Ha, qo'llash" });
   if (!confirmed) return;
 
   const btn = document.getElementById("restoreConfigBundleBtn");
@@ -1782,4 +1782,98 @@ document.getElementById("sideNav")?.addEventListener("click", (e) => {
     loadDatabaseStatus();
     loadDbSnapshots();
   }
+});
+
+
+/* ---------- Izohlar moderatsiyasi ---------- */
+
+const commentsState = { items: [], total: 0, search: "", loading: false };
+const COMMENTS_PAGE = 30;
+
+function renderAdminComments() {
+  const list = document.getElementById("adminCommentsList");
+  const totalEl = document.getElementById("commentsTotal");
+  const moreBtn = document.getElementById("commentsMoreBtn");
+  if (!list) return;
+  totalEl.textContent = commentsState.total ? `Jami: ${commentsState.total}` : "";
+  moreBtn.hidden = commentsState.items.length >= commentsState.total;
+
+  if (!commentsState.items.length) {
+    list.innerHTML = `<p class="empty-row" style="padding:26px 6px;text-align:center;">${commentsState.search ? "Hech narsa topilmadi." : "Hozircha izoh yo'q."}</p>`;
+    return;
+  }
+  list.innerHTML = commentsState.items
+    .map(
+      (c) => `
+      <div class="comment-row" data-id="${c.id}">
+        <div class="comment-row-main">
+          <div class="comment-row-meta">
+            <strong>${escapeHtml(c.customer_name)}</strong>
+            <span>${escapeHtml(c.customer_email || "email yo'q")}</span>
+            <span>· ${escapeHtml(formatDate(c.created_at))}${c.edited_at ? " (tahrirlangan)" : ""}</span>
+          </div>
+          <div class="comment-row-product">Mahsulot: <b>${escapeHtml(c.product_name)}</b></div>
+          <p class="comment-row-body">${escapeHtml(c.body)}</p>
+        </div>
+        <button class="btn btn-danger btn-sm" data-del-comment="${c.id}">O'chirish</button>
+      </div>`
+    )
+    .join("");
+}
+
+async function loadAdminComments({ append = false } = {}) {
+  if (commentsState.loading) return;
+  commentsState.loading = true;
+  try {
+    const offset = append ? commentsState.items.length : 0;
+    const params = new URLSearchParams({ limit: COMMENTS_PAGE, offset });
+    if (commentsState.search) params.set("search", commentsState.search);
+    const data = await apiRequest(`/admin/comments?${params.toString()}`);
+    commentsState.total = data.total;
+    commentsState.items = append ? commentsState.items.concat(data.items) : data.items;
+    renderAdminComments();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    commentsState.loading = false;
+  }
+}
+
+let commentSearchTimer = null;
+document.getElementById("commentSearch")?.addEventListener("input", (e) => {
+  clearTimeout(commentSearchTimer);
+  commentSearchTimer = setTimeout(() => {
+    commentsState.search = e.target.value.trim();
+    loadAdminComments();
+  }, 300);
+});
+
+document.getElementById("refreshCommentsBtn")?.addEventListener("click", () => loadAdminComments());
+document.getElementById("commentsMoreBtn")?.addEventListener("click", () => loadAdminComments({ append: true }));
+
+document.getElementById("adminCommentsList")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-del-comment]");
+  if (!btn) return;
+  const id = Number(btn.dataset.delComment);
+  const item = commentsState.items.find((c) => c.id === id);
+  const ok = await lgConfirm({
+    tone: "danger",
+    title: "Izohni o'chirish",
+    message: `${item ? `"${item.customer_name}" ning izohi` : "Izoh"} bazadan butunlay o'chiriladi va saytda ko'rinmaydi. Buni qaytarib bo'lmaydi.`,
+    confirmText: "Ha, o'chirish",
+  });
+  if (!ok) return;
+  btn.disabled = true;
+  try {
+    await apiRequest(`/admin/comments/${id}`, { method: "DELETE" });
+    showToast("Izoh bazadan o'chirildi.");
+  } catch (err) {
+    // Allaqachon o'chirilgan (masalan egasi o'zi o'chirgan) bo'lsa ham ro'yxat yangilanadi.
+    showToast(err.message, true);
+  }
+  loadAdminComments();
+});
+
+document.getElementById("sideNav")?.addEventListener("click", (e) => {
+  if (e.target.closest('[data-view="comments"]')) loadAdminComments();
 });

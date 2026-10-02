@@ -10,6 +10,7 @@ import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -103,11 +104,59 @@ def log_visit(
     return None
 
 
+def _social_counts(db: Session, product_ids: List[int], customer: Optional[models.Customer]):
+    """Berilgan mahsulotlar uchun like/izoh sonlari va (kirgan bo'lsa) shu
+    mijoz like bosgan mahsulotlar to'plamini bitta so'rov bilan qaytaradi."""
+    if not product_ids:
+        return {}, {}, set()
+    likes = dict(
+        db.query(models.ProductLike.product_id, func.count(models.ProductLike.id))
+        .filter(models.ProductLike.product_id.in_(product_ids))
+        .group_by(models.ProductLike.product_id)
+        .all()
+    )
+    comments = dict(
+        db.query(models.ProductComment.product_id, func.count(models.ProductComment.id))
+        .join(models.Customer, models.Customer.id == models.ProductComment.customer_id)
+        .filter(models.ProductComment.product_id.in_(product_ids))
+        .group_by(models.ProductComment.product_id)
+        .all()
+    )
+    liked = set()
+    if customer is not None:
+        liked = {
+            row[0]
+            for row in db.query(models.ProductLike.product_id)
+            .filter(
+                models.ProductLike.customer_id == customer.id,
+                models.ProductLike.product_id.in_(product_ids),
+            )
+            .all()
+        }
+    return likes, comments, liked
+
+
+def _product_public(p, likes, comments, liked) -> schemas.ProductPublic:
+    return schemas.ProductPublic(
+        id=p.id,
+        name=p.name,
+        description=p.description or "",
+        category=p.category,
+        sale_price=p.sale_price,
+        image_url=utils.build_image_url(p.image_filename),
+        image_urls=[utils.build_image_url(x) for x in _product_images(p)],
+        like_count=int(likes.get(p.id, 0)),
+        comment_count=int(comments.get(p.id, 0)),
+        liked=p.id in liked,
+    )
+
+
 @router.get("/products", response_model=List[schemas.ProductPublic])
 def list_products(
     category: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
+    customer: Optional[models.Customer] = Depends(security.get_optional_customer),
 ):
     query = db.query(models.Product).filter(models.Product.is_active == 1)
     if category:
@@ -116,22 +165,31 @@ def list_products(
         query = query.filter(models.Product.name.ilike(f"%{search.strip()}%"))
 
     products = query.order_by(models.Product.created_at.desc()).all()
-    return [
-        schemas.ProductPublic(
-            id=p.id,
-            name=p.name,
-            description=p.description or "",
-            category=p.category,
-            sale_price=p.sale_price,
-            image_url=utils.build_image_url(p.image_filename),
-            image_urls=[utils.build_image_url(x) for x in _product_images(p)],
-        )
-        for p in products
-    ]
+    likes, comments, liked = _social_counts(db, [p.id for p in products], customer)
+    return [_product_public(p, likes, comments, liked) for p in products]
 
 
 @router.get("/products/{product_id}", response_model=schemas.ProductPublic)
-def get_product(product_id: int, db: Session = Depends(get_db)):
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    customer: Optional[models.Customer] = Depends(security.get_optional_customer),
+):
+    product = _active_product_or_404(db, product_id)
+    likes, comments, liked = _social_counts(db, [product.id], customer)
+    return _product_public(product, likes, comments, liked)
+
+
+# ---------- Like (yurakcha) va izohlar ----------
+#
+# FAQAT Google orqali kirgan mijoz like bosa oladi va izoh yoza oladi
+# (security.get_current_customer). O'qish (izohlarni ko'rish) esa hamma uchun
+# ochiq. Izohlarda mijozning faqat ismi chiqadi -- email/rasm/ID chiqmaydi.
+
+_comment_lock = threading.Lock()
+
+
+def _active_product_or_404(db: Session, product_id: int) -> models.Product:
     product = (
         db.query(models.Product)
         .filter(models.Product.id == product_id, models.Product.is_active == 1)
@@ -139,15 +197,221 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     )
     if product is None:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi.")
-    return schemas.ProductPublic(
-        id=product.id,
-        name=product.name,
-        description=product.description or "",
-        category=product.category,
-        sale_price=product.sale_price,
-        image_url=utils.build_image_url(product.image_filename),
-        image_urls=[utils.build_image_url(x) for x in _product_images(product)],
+    return product
+
+
+def _like_count(db: Session, product_id: int) -> int:
+    return (
+        db.query(func.count(models.ProductLike.id))
+        .filter(models.ProductLike.product_id == product_id)
+        .scalar()
+        or 0
     )
+
+
+def _comment_out(c: models.ProductComment, name: str, me: Optional[models.Customer]) -> schemas.CommentOut:
+    return schemas.CommentOut(
+        id=c.id,
+        name=name,
+        body=c.body,
+        created_at=c.created_at,
+        edited=c.edited_at is not None,
+        is_mine=me is not None and c.customer_id == me.id,
+    )
+
+
+@router.get("/products/{product_id}/social", response_model=schemas.ProductSocialOut)
+def product_social(
+    product_id: int,
+    db: Session = Depends(get_db),
+    customer: Optional[models.Customer] = Depends(security.get_optional_customer),
+):
+    """Mahsulot oynasi ochilganda: like soni, shu mijoz like bosganmi va
+    barcha (eng yangi COMMENT_LIST_LIMIT ta) izohlar."""
+    _active_product_or_404(db, product_id)
+    rows = (
+        db.query(models.ProductComment, models.Customer.name)
+        .join(models.Customer, models.Customer.id == models.ProductComment.customer_id)
+        .filter(models.ProductComment.product_id == product_id)
+        .order_by(models.ProductComment.created_at.desc(), models.ProductComment.id.desc())
+        .limit(config.COMMENT_LIST_LIMIT)
+        .all()
+    )
+    total = (
+        db.query(func.count(models.ProductComment.id))
+        .join(models.Customer, models.Customer.id == models.ProductComment.customer_id)
+        .filter(models.ProductComment.product_id == product_id)
+        .scalar()
+        or 0
+    )
+    liked = False
+    mine = 0
+    if customer is not None:
+        liked = (
+            db.query(models.ProductLike.id)
+            .filter(
+                models.ProductLike.product_id == product_id,
+                models.ProductLike.customer_id == customer.id,
+            )
+            .first()
+            is not None
+        )
+        mine = (
+            db.query(func.count(models.ProductComment.id))
+            .filter(
+                models.ProductComment.product_id == product_id,
+                models.ProductComment.customer_id == customer.id,
+            )
+            .scalar()
+            or 0
+        )
+    return schemas.ProductSocialOut(
+        like_count=_like_count(db, product_id),
+        liked=liked,
+        comment_count=int(total),
+        comments=[_comment_out(c, name, customer) for c, name in rows],
+        my_comment_count=int(mine),
+        comment_limit=config.COMMENT_MAX_PER_USER_PER_PRODUCT,
+        comment_max_length=config.COMMENT_MAX_LENGTH,
+    )
+
+
+@router.put("/products/{product_id}/like", response_model=schemas.LikeOut)
+def like_product(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Like bosadi. Allaqachon bosilgan bo'lsa ham xato bermaydi (idempotent)."""
+    security.enforce_rate_limit(request, "product_like", max_calls=90, window_seconds=300)
+    _active_product_or_404(db, product_id)
+    exists = (
+        db.query(models.ProductLike.id)
+        .filter(
+            models.ProductLike.product_id == product_id,
+            models.ProductLike.customer_id == customer.id,
+        )
+        .first()
+    )
+    if exists is None:
+        db.add(models.ProductLike(product_id=product_id, customer_id=customer.id))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # parallel so'rov allaqachon yozgan -- natija bir xil
+    return schemas.LikeOut(liked=True, like_count=_like_count(db, product_id))
+
+
+@router.delete("/products/{product_id}/like", response_model=schemas.LikeOut)
+def unlike_product(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Like'ni qaytarib oladi (bosilmagan bo'lsa ham xato bermaydi)."""
+    security.enforce_rate_limit(request, "product_like", max_calls=90, window_seconds=300)
+    db.query(models.ProductLike).filter(
+        models.ProductLike.product_id == product_id,
+        models.ProductLike.customer_id == customer.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return schemas.LikeOut(liked=False, like_count=_like_count(db, product_id))
+
+
+@router.post("/products/{product_id}/comments", response_model=schemas.CommentOut, status_code=201)
+def add_comment(
+    product_id: int,
+    payload: schemas.CommentIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Izoh yozadi. Bitta akkaunt bitta mahsulotga COMMENT_MAX_PER_USER_PER_PRODUCT
+    (5) tagacha izoh yoza oladi; matn COMMENT_MAX_LENGTH (100) belgigacha."""
+    security.enforce_rate_limit(request, "product_comment", max_calls=20, window_seconds=600)
+    _active_product_or_404(db, product_id)
+    try:
+        body = utils.clean_comment_text(payload.body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Tekshiruv + yozish bir butun: ikki parallel so'rov limitdan oshib ketmasin.
+    with _comment_lock:
+        mine = (
+            db.query(func.count(models.ProductComment.id))
+            .filter(
+                models.ProductComment.product_id == product_id,
+                models.ProductComment.customer_id == customer.id,
+            )
+            .scalar()
+            or 0
+        )
+        if mine >= config.COMMENT_MAX_PER_USER_PER_PRODUCT:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Bu mahsulotga {config.COMMENT_MAX_PER_USER_PER_PRODUCT} tagacha izoh "
+                    "yozish mumkin. Eski izohingizni o'chirib yoki tahrirlab ko'ring."
+                ),
+            )
+        comment = models.ProductComment(
+            product_id=product_id, customer_id=customer.id, body=body
+        )
+        db.add(comment)
+        db.commit()
+        db.refresh(comment)
+    return _comment_out(comment, customer.name, customer)
+
+
+def _own_comment_or_404(db: Session, comment_id: int, customer: models.Customer) -> models.ProductComment:
+    comment = (
+        db.query(models.ProductComment)
+        .filter(
+            models.ProductComment.id == comment_id,
+            models.ProductComment.customer_id == customer.id,
+        )
+        .first()
+    )
+    if comment is None:
+        # Begona izoh ham, mavjud bo'lmagani ham bir xil javob: izoh egasi oshkor bo'lmasin.
+        raise HTTPException(status_code=404, detail="Izoh topilmadi.")
+    return comment
+
+
+@router.put("/comments/{comment_id}", response_model=schemas.CommentOut)
+def edit_comment(
+    comment_id: int,
+    payload: schemas.CommentIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Faqat o'z izohini tahrirlaydi."""
+    security.enforce_rate_limit(request, "product_comment", max_calls=20, window_seconds=600)
+    comment = _own_comment_or_404(db, comment_id, customer)
+    try:
+        comment.body = utils.clean_comment_text(payload.body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    comment.edited_at = datetime.utcnow()
+    db.commit()
+    db.refresh(comment)
+    return _comment_out(comment, customer.name, customer)
+
+
+@router.delete("/comments/{comment_id}", status_code=204)
+def delete_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    customer: models.Customer = Depends(security.get_current_customer),
+):
+    """Faqat o'z izohini o'chiradi."""
+    comment = _own_comment_or_404(db, comment_id, customer)
+    db.delete(comment)
+    db.commit()
+    return None
 
 
 @router.get("/categories", response_model=List[schemas.CategoryOut])

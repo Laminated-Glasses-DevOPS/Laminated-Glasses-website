@@ -215,6 +215,9 @@ def delete_product(
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi.")
 
     db.query(models.CartItem).filter(models.CartItem.product_id == product.id).delete()
+    # Mahsulot o'chsa, uning like va izohlari ham o'chadi (yetim yozuv qolmasin).
+    db.query(models.ProductLike).filter(models.ProductLike.product_id == product.id).delete()
+    db.query(models.ProductComment).filter(models.ProductComment.product_id == product.id).delete()
     # Faqat bitta image_filename emas, mahsulotning BUTUN galereyasi
     # (images_json dagi barcha fayllar) diskdan to'liq o'chiriladi.
     all_images = _product_images(product)
@@ -338,6 +341,89 @@ def delete_order(
     if order is None:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi.")
     db.delete(order)
+    db.commit()
+    return None
+
+
+# ---------- Izohlar moderatsiyasi ----------
+#
+# Admin barcha mahsulot izohlarini ko'radi (egasining emaili bilan) va
+# istalganini o'chira oladi. O'chirish HAQIQIY: qator bazadan butunlay
+# o'chadi (db.delete) -- "yashirilgan" belgisi emas, shu sababli u saytda ham,
+# keyingi eksportlarda ham chiqmaydi.
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@router.get("/comments", response_model=schemas.AdminCommentListOut)
+def list_comments_admin(
+    search: Optional[str] = None,
+    limit: int = 30,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Eng yangisidan boshlab, sahifalab. `search` -- izoh matni, egasining
+    ismi/emaili yoki mahsulot nomi bo'yicha qidiradi."""
+    limit = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
+    query = (
+        db.query(models.ProductComment, models.Customer, models.Product.name)
+        .join(models.Customer, models.Customer.id == models.ProductComment.customer_id)
+        .outerjoin(models.Product, models.Product.id == models.ProductComment.product_id)
+    )
+    term = (search or "").strip()
+    if term:
+        like = f"%{_escape_like(term)}%"
+        query = query.filter(
+            models.ProductComment.body.ilike(like, escape="\\")
+            | models.Customer.name.ilike(like, escape="\\")
+            | models.Customer.email.ilike(like, escape="\\")
+            | models.Product.name.ilike(like, escape="\\")
+        )
+    total = query.count()
+    rows = (
+        query.order_by(models.ProductComment.created_at.desc(), models.ProductComment.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    return schemas.AdminCommentListOut(
+        total=total,
+        items=[
+            schemas.AdminCommentOut(
+                id=c.id,
+                product_id=c.product_id,
+                product_name=product_name or "(o'chirilgan mahsulot)",
+                customer_id=cust.id,
+                customer_name=cust.name,
+                customer_email=cust.email,
+                body=c.body,
+                created_at=c.created_at,
+                edited_at=c.edited_at,
+            )
+            for c, cust, product_name in rows
+        ],
+    )
+
+
+@router.delete("/comments/{comment_id}", status_code=204)
+def delete_comment_admin(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(security.get_current_admin),
+):
+    """Izohni bazadan butunlay o'chiradi (egasi kim bo'lishidan qat'i nazar)."""
+    comment = (
+        db.query(models.ProductComment)
+        .filter(models.ProductComment.id == comment_id)
+        .first()
+    )
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Izoh topilmadi (allaqachon o'chirilgan bo'lishi mumkin).")
+    db.delete(comment)
     db.commit()
     return None
 

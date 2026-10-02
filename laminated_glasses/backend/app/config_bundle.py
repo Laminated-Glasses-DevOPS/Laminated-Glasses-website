@@ -18,6 +18,8 @@ o'sha bo'lim xatosiz o'tkazib yuboriladi):
                                        foydalanuvchilar (google_sub, ism,
                                        email, rasm, kirishlar soni, oxirgi
                                        kirish vaqti va h.k.)
+    izohlar.db                     -- product_comments (mahsulot izohlari) +
+                                       product_likes (like'lar)
 
 MUHIM: bular ALOHIDA, mustaqil SQLite fayllar -- asosiy
 `laminated_glasses.db` ning bo'lagi emas, balki undan ANIQ shu jadvallar
@@ -75,6 +77,10 @@ BUNDLE_TABLES: Dict[str, List[str]] = {
     "admin_password.db": ["site_settings"],
     "statistics.db": ["security_events", "visit_logs"],
     "foydalanuvchilar.db": ["customers"],
+    # Izohlar va like'lar mahsulot (mahsulotlar.db) hamda mijoz
+    # (foydalanuvchilar.db) ID'lariga bog'liq -- shu sababli ro'yxatning
+    # OXIRIDA turadi: avval ular tiklanadi, so'ng izohlar.
+    "izohlar.db": ["product_comments", "product_likes"],
 }
 
 
@@ -191,6 +197,26 @@ def _columns(conn: sqlite3.Connection, schema: str, table: str) -> List[str]:
     return [row[1] for row in conn.execute(f"PRAGMA {schema}.table_info({table})")]
 
 
+_SOCIAL_TABLES = ("product_comments", "product_likes")
+
+
+def _purge_social_orphans(conn: sqlite3.Connection) -> None:
+    """Mahsulot yoki mijoz almashtirilgach (yoki izohlar boshqa holatdagi
+    zipdan kelgach), endi mavjud bo'lmagan mahsulot/mijozga tegishli "yetim"
+    izoh va like'larni o'chiradi -- aks holda ID'lar boshqa mahsulot/odamga
+    tegib, begona izoh noto'g'ri joyda ko'rinib qolishi mumkin edi."""
+    existing = {
+        row[0] for row in conn.execute("SELECT name FROM main.sqlite_master WHERE type='table'")
+    }
+    for table in _SOCIAL_TABLES:
+        if table not in existing:
+            continue
+        conn.execute(
+            f"DELETE FROM {table} WHERE product_id NOT IN (SELECT id FROM products) "
+            f"OR customer_id NOT IN (SELECT id FROM customers)"
+        )
+
+
 def _merge_section(section_db_path: Path, tables: List[str]) -> None:
     """`section_db_path` ichidagi jadvallarni asosiy bazaga TO'LIQ
     ALMASHTIRIB qo'shadi: har bir jadvalning eski qatorlari o'chiriladi,
@@ -225,6 +251,8 @@ def _merge_section(section_db_path: Path, tables: List[str]) -> None:
                 # Konstruktor limiti mijoz ID'siga bog'liq: ID'lar boshqa odamga
                 # tegib qolib, begona akkauntni bloklab qo'ymasligi uchun.
                 conn.execute("DELETE FROM constructor_usage")
+            if table in ("customers", "products") + _SOCIAL_TABLES:
+                _purge_social_orphans(conn)
         conn.commit()
         conn.execute("DETACH DATABASE part")
     except Exception:
